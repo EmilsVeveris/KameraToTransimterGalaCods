@@ -77,6 +77,7 @@ void Error_Handler(void);
 #define SPIRIT1_CSn_GPIO_Port GPIOB
 #define SPIRIT1_GPIO3_Pin GPIO_PIN_8
 #define SPIRIT1_GPIO3_GPIO_Port GPIOD
+#define SPIRIT1_GPIO3_EXTI_IRQn EXTI8_IRQn
 #define SPIRIT1_SDN_Pin GPIO_PIN_9
 #define SPIRIT1_SDN_GPIO_Port GPIOD
 #define DIODE1_Pin GPIO_PIN_10

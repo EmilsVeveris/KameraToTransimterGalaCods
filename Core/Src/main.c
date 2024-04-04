@@ -18,10 +18,23 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "i2c.h"
+#include "icache.h"
+#include "memorymap.h"
+#include "spi.h"
+#include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "SPIRIT_Config.h"
 
+//#include "fatfs_sd.h"
+
+#include <string.h> /* memset */
+
+#include "string.h"
+//#include "ArduCAM.h"
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,6 +45,57 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+//Spirit1 parameters
+
+#define XTAL_FREQUENCY              50000000
+
+/*  Radio configuration parameters  */
+#define XTAL_OFFSET_PPM             0
+//#define INFINITE_TIMEOUT            0.0
+#define BASE_FREQUENCY              433.0e6
+#define CHANNEL_SPACE               100e3
+#define CHANNEL_NUMBER              0
+#define MODULATION_SELECT           FSK
+#define DATARATE                    38400
+#define FREQ_DEVIATION              20e3
+#define BANDWIDTH                   500E3
+
+#define POWER_INDEX                 7
+#define POWER_DBM                   11.6
+
+//#define RECEIVE_TIMEOUT             2000.0 // change the value for required timeout period
+#define RSSI_THRESHOLD              -120  // Default RSSI at reception, more than noise floor
+//#define CSMA_RSSI_THRESHOLD         -90   // Higher RSSI to Transmit. If it's lower, the Channel will be seen as busy.
+
+///*  Packet configuration parameters  */
+#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_16BYTES
+#define SYNC_LENGTH                 PKT_SYNC_LENGTH_4BYTES
+#define SYNC_WORD                   0x88888888
+#define LENGTH_TYPE                 PKT_LENGTH_VAR
+#define LENGTH_WIDTH                7
+#define CRC_MODE                    PKT_CRC_MODE_8BITS
+#define CONTROL_LENGTH              PKT_CONTROL_LENGTH_0BYTES
+#define EN_ADDRESS                  S_ENABLE
+#define EN_FEC                      S_DISABLE
+#define EN_WHITENING                S_ENABLE
+
+#define EN_FILT_MY_ADDRESS          S_ENABLE
+#define EN_FILT_MULTICAST_ADDRESS   S_ENABLE
+#define EN_FILT_BROADCAST_ADDRESS   S_ENABLE
+#define MY_ADDRESS                  0x44
+#define MULTICAST_ADDRESS           0xEE
+#define BROADCAST_ADDRESS           0xFF
+
+#define MAX_BUFFER_LEN              96
+#define MAX_PAYLOAD_LEN             126 // (2^7 - 1) - 1 - 0 = 126 (LENGTH_WID=7, 1 address byte, & 0 control bytes)
+
+
+
+
+#define PAYLOAD_LEN             80
+
+
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -41,30 +105,26 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-I2C_HandleTypeDef hi2c1;
-
-SPI_HandleTypeDef hspi1;
-SPI_HandleTypeDef hspi2;
-SPI_HandleTypeDef hspi3;
-
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_SPI1_Init(void);
-static void MX_I2C1_Init(void);
-static void MX_SPI2_Init(void);
-static void MX_SPI3_Init(void);
-static void MX_ICACHE_Init(void);
 /* USER CODE BEGIN PFP */
+
+//Spirit1 function prototypes
+
+
+void SPSGRF_StartTx(uint8_t *txBuff, uint8_t txLen);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+//Spirit1 flag status
+volatile SpiritFlagStatus xTxDoneFlag;
 
 /* USER CODE END 0 */
 
@@ -75,7 +135,20 @@ static void MX_ICACHE_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+	//Variables
 
+	uint8_t buffer_TX[PAYLOAD_LEN] = {0x00};
+	uint8_t buffer_RX[PAYLOAD_LEN] = "Hello world ";
+
+	uint8_t state = 0;
+
+	uint8_t temp = 0, lastBitFound = 0;
+	uint32_t count = 0, var = 0;
+	uint8_t spi_recv_buf = 0;
+	uint8_t spi_buf;
+	uint8_t tempData, tempData_last;
+
+	uint8_t vid, pid;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -103,6 +176,106 @@ int main(void)
   MX_ICACHE_Init();
   /* USER CODE BEGIN 2 */
 
+  /*
+ 	 *
+ 	 *
+ 	 *
+ 	 * Spirit 1 init
+ 	 *
+ 	 *
+ 	 *
+ 	 */
+
+ 	SpiritEnterShutdown();
+ 	SpiritExitShutdown();
+ 	SpiritManagementWaExtraCurrent();
+
+ 	do {
+ 		for (volatile uint8_t i = 0; i != 0xFF; i++)
+ 			; // delay for state transition
+ 		SpiritRefreshStatus(); // reads the MC_STATUS register
+ 	} while (g_xStatus.MC_STATE != MC_STATE_READY);
+
+ 	SRadioInit xRadioInit;
+
+ 	// Initialize radio RF parameters
+ 	xRadioInit.nXtalOffsetPpm = XTAL_OFFSET_PPM;
+ 	xRadioInit.lFrequencyBase = BASE_FREQUENCY;
+ 	xRadioInit.nChannelSpace = CHANNEL_SPACE;
+ 	xRadioInit.cChannelNumber = CHANNEL_NUMBER;
+ 	xRadioInit.xModulationSelect = MODULATION_SELECT;
+ 	xRadioInit.lDatarate = DATARATE;
+ 	xRadioInit.lFreqDev = FREQ_DEVIATION;
+ 	xRadioInit.lBandwidth = BANDWIDTH;
+ 	SpiritRadioSetXtalFrequency(XTAL_FREQUENCY); // Must be called before SpiritRadioInit()
+ 	SpiritRadioInit(&xRadioInit);
+
+ 	// Set the transmitter power level
+ 	SpiritRadioSetPALeveldBm(POWER_INDEX, POWER_DBM);
+ 	SpiritRadioSetPALevelMaxIndex(POWER_INDEX);
+
+ 	PktBasicInit xBasicInit;
+ 	PktBasicAddressesInit xBasicAddress;
+
+ 	// Configure packet handler to use the Basic packet format
+ 	xBasicInit.xPreambleLength = PREAMBLE_LENGTH;
+ 	xBasicInit.xSyncLength = SYNC_LENGTH;
+ 	xBasicInit.lSyncWords = SYNC_WORD;
+ 	xBasicInit.xFixVarLength = LENGTH_TYPE;
+ 	xBasicInit.cPktLengthWidth = LENGTH_WIDTH;
+ 	xBasicInit.xCrcMode = CRC_MODE;
+ 	xBasicInit.xControlLength = CONTROL_LENGTH;
+ 	xBasicInit.xAddressField = EN_ADDRESS;
+ 	xBasicInit.xFec = EN_FEC;
+ 	xBasicInit.xDataWhitening = EN_WHITENING;
+ 	SpiritPktBasicInit(&xBasicInit);
+
+ 	// Configure destination address criteria for automatic packet filtering
+ 	xBasicAddress.xFilterOnMyAddress = EN_FILT_MY_ADDRESS;
+ 	xBasicAddress.cMyAddress = MY_ADDRESS;
+ 	xBasicAddress.xFilterOnMulticastAddress = EN_FILT_MULTICAST_ADDRESS;
+ 	xBasicAddress.cMulticastAddress = MULTICAST_ADDRESS;
+ 	xBasicAddress.xFilterOnBroadcastAddress = EN_FILT_BROADCAST_ADDRESS;
+ 	xBasicAddress.cBroadcastAddress = BROADCAST_ADDRESS;
+ 	SpiritPktBasicAddressesInit(&xBasicAddress);
+
+ 	SGpioInit xGpioInit;
+
+ 	// Configure GPIO3 as interrupt request pin (active low)
+ 	xGpioInit.xSpiritGpioPin = SPIRIT_GPIO_3;
+ 	xGpioInit.xSpiritGpioMode = SPIRIT_GPIO_MODE_DIGITAL_OUTPUT_LP;
+ 	xGpioInit.xSpiritGpioIO = SPIRIT_GPIO_DIG_OUT_IRQ;
+ 	SpiritGpioInit(&xGpioInit);
+
+ 	// Generate an interrupt request for the following IRQs
+ 	SpiritIrqDeInit(NULL);
+ 	SpiritIrq(TX_DATA_SENT, S_ENABLE);
+ 	SpiritIrq(RX_DATA_READY, S_ENABLE);
+ 	SpiritIrq(RX_DATA_DISC, S_ENABLE);
+ 	SpiritIrq(RX_TIMEOUT, S_ENABLE);
+ 	SpiritIrqClearStatus();
+
+ 	// Enable the synchronization quality indicator check (perfect match required)
+ 	// NOTE: 9.10.4: "It is recommended to always enable the SQI check."
+ 	SpiritQiSetSqiThreshold(SQI_TH_0);
+ 	SpiritQiSqiCheck(S_ENABLE);
+
+ 	// Set the RSSI Threshold for Carrier Sense (9.10.2)
+ 	// NOTE: CS_MODE = 0 at reset
+ 	SpiritQiSetRssiThresholddBm(RSSI_THRESHOLD);
+
+ 	// Configure the RX timeout
+	#ifdef RECEIVE_TIMEOUT
+		 SpiritTimerSetRxTimeoutMs(2000.0);
+	#else
+		 SET_INFINITE_RX_TIMEOUT();
+	#endif /* RECIEVE_TIMEOUT */
+ 	SpiritTimerSetRxTimeoutStopCondition(SQI_ABOVE_THRESHOLD);
+
+ 	SpiritPktBasicSetDestinationAddress(0x44);
+
+ 	xTxDoneFlag = S_SET;
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -118,6 +291,13 @@ int main(void)
 	  HAL_GPIO_TogglePin(DIODE4_GPIO_Port, DIODE4_Pin);
 	  HAL_GPIO_TogglePin(DIODE5_GPIO_Port, DIODE5_Pin);
 	  HAL_GPIO_TogglePin(DIODE6_GPIO_Port, DIODE6_Pin);
+
+
+	  //Spirit1 send data
+	  xTxDoneFlag = S_RESET;
+	  SPSGRF_StartTx(buffer_RX, sizeof(buffer_RX));
+	  while (!xTxDoneFlag);
+
 	  HAL_Delay(500);
   }
   /* USER CODE END 3 */
@@ -168,344 +348,44 @@ void SystemClock_Config(void)
   }
 }
 
-/**
-  * @brief I2C1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_I2C1_Init(void)
-{
-
-  /* USER CODE BEGIN I2C1_Init 0 */
-
-  /* USER CODE END I2C1_Init 0 */
-
-  /* USER CODE BEGIN I2C1_Init 1 */
-
-  /* USER CODE END I2C1_Init 1 */
-  hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x20303E5D;
-  hi2c1.Init.OwnAddress1 = 0;
-  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c1.Init.OwnAddress2 = 0;
-  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
-  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Analogue filter
-  */
-  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Digital filter
-  */
-  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2C1_Init 2 */
-
-  /* USER CODE END I2C1_Init 2 */
-
-}
-
-/**
-  * @brief ICACHE Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_ICACHE_Init(void)
-{
-
-  /* USER CODE BEGIN ICACHE_Init 0 */
-
-  /* USER CODE END ICACHE_Init 0 */
-
-  /* USER CODE BEGIN ICACHE_Init 1 */
-
-  /* USER CODE END ICACHE_Init 1 */
-
-  /** Enable instruction cache (default 2-ways set associative cache)
-  */
-  if (HAL_ICACHE_Enable() != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN ICACHE_Init 2 */
-
-  /* USER CODE END ICACHE_Init 2 */
-
-}
-
-/**
-  * @brief SPI1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI1_Init(void)
-{
-
-  /* USER CODE BEGIN SPI1_Init 0 */
-
-  /* USER CODE END SPI1_Init 0 */
-
-  SPI_AutonomousModeConfTypeDef HAL_SPI_AutonomousMode_Cfg_Struct = {0};
-
-  /* USER CODE BEGIN SPI1_Init 1 */
-
-  /* USER CODE END SPI1_Init 1 */
-  /* SPI1 parameter configuration*/
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_4BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 0x7;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
-  hspi1.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
-  hspi1.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
-  hspi1.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
-  hspi1.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
-  hspi1.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
-  hspi1.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
-  hspi1.Init.IOSwap = SPI_IO_SWAP_DISABLE;
-  hspi1.Init.ReadyMasterManagement = SPI_RDY_MASTER_MANAGEMENT_INTERNALLY;
-  hspi1.Init.ReadyPolarity = SPI_RDY_POLARITY_HIGH;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  HAL_SPI_AutonomousMode_Cfg_Struct.TriggerState = SPI_AUTO_MODE_DISABLE;
-  HAL_SPI_AutonomousMode_Cfg_Struct.TriggerSelection = SPI_GRP1_GPDMA_CH0_TCF_TRG;
-  HAL_SPI_AutonomousMode_Cfg_Struct.TriggerPolarity = SPI_TRIG_POLARITY_RISING;
-  if (HAL_SPIEx_SetConfigAutonomousMode(&hspi1, &HAL_SPI_AutonomousMode_Cfg_Struct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI1_Init 2 */
-
-  /* USER CODE END SPI1_Init 2 */
-
-}
-
-/**
-  * @brief SPI2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI2_Init(void)
-{
-
-  /* USER CODE BEGIN SPI2_Init 0 */
-
-  /* USER CODE END SPI2_Init 0 */
-
-  SPI_AutonomousModeConfTypeDef HAL_SPI_AutonomousMode_Cfg_Struct = {0};
-
-  /* USER CODE BEGIN SPI2_Init 1 */
-
-  /* USER CODE END SPI2_Init 1 */
-  /* SPI2 parameter configuration*/
-  hspi2.Instance = SPI2;
-  hspi2.Init.Mode = SPI_MODE_MASTER;
-  hspi2.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi2.Init.DataSize = SPI_DATASIZE_4BIT;
-  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
-  hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi2.Init.CRCPolynomial = 0x7;
-  hspi2.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
-  hspi2.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
-  hspi2.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
-  hspi2.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
-  hspi2.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
-  hspi2.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
-  hspi2.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
-  hspi2.Init.IOSwap = SPI_IO_SWAP_DISABLE;
-  hspi2.Init.ReadyMasterManagement = SPI_RDY_MASTER_MANAGEMENT_INTERNALLY;
-  hspi2.Init.ReadyPolarity = SPI_RDY_POLARITY_HIGH;
-  if (HAL_SPI_Init(&hspi2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  HAL_SPI_AutonomousMode_Cfg_Struct.TriggerState = SPI_AUTO_MODE_DISABLE;
-  HAL_SPI_AutonomousMode_Cfg_Struct.TriggerSelection = SPI_GRP1_GPDMA_CH0_TCF_TRG;
-  HAL_SPI_AutonomousMode_Cfg_Struct.TriggerPolarity = SPI_TRIG_POLARITY_RISING;
-  if (HAL_SPIEx_SetConfigAutonomousMode(&hspi2, &HAL_SPI_AutonomousMode_Cfg_Struct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI2_Init 2 */
-
-  /* USER CODE END SPI2_Init 2 */
-
-}
-
-/**
-  * @brief SPI3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI3_Init(void)
-{
-
-  /* USER CODE BEGIN SPI3_Init 0 */
-
-  /* USER CODE END SPI3_Init 0 */
-
-  SPI_AutonomousModeConfTypeDef HAL_SPI_AutonomousMode_Cfg_Struct = {0};
-
-  /* USER CODE BEGIN SPI3_Init 1 */
-
-  /* USER CODE END SPI3_Init 1 */
-  /* SPI3 parameter configuration*/
-  hspi3.Instance = SPI3;
-  hspi3.Init.Mode = SPI_MODE_MASTER;
-  hspi3.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi3.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi3.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi3.Init.NSS = SPI_NSS_SOFT;
-  hspi3.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
-  hspi3.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi3.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi3.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi3.Init.CRCPolynomial = 0x7;
-  hspi3.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
-  hspi3.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
-  hspi3.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
-  hspi3.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
-  hspi3.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
-  hspi3.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
-  hspi3.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
-  hspi3.Init.IOSwap = SPI_IO_SWAP_DISABLE;
-  hspi3.Init.ReadyMasterManagement = SPI_RDY_MASTER_MANAGEMENT_INTERNALLY;
-  hspi3.Init.ReadyPolarity = SPI_RDY_POLARITY_HIGH;
-  if (HAL_SPI_Init(&hspi3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  HAL_SPI_AutonomousMode_Cfg_Struct.TriggerState = SPI_AUTO_MODE_DISABLE;
-  HAL_SPI_AutonomousMode_Cfg_Struct.TriggerSelection = SPI_GRP2_LPDMA_CH0_TCF_TRG;
-  HAL_SPI_AutonomousMode_Cfg_Struct.TriggerPolarity = SPI_TRIG_POLARITY_RISING;
-  if (HAL_SPIEx_SetConfigAutonomousMode(&hspi3, &HAL_SPI_AutonomousMode_Cfg_Struct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI3_Init 2 */
-
-  /* USER CODE END SPI3_Init 2 */
-
-}
-
-/**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-/* USER CODE BEGIN MX_GPIO_Init_1 */
-/* USER CODE END MX_GPIO_Init_1 */
-
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(Mosfet_controll_GPIO_Port, Mosfet_controll_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, H_BRIDGE_nSLEEP_Pin|H_BRIDGE_IN1_Pin|H_BRIDGE_EN1_Pin|H_BRIDGE_IN2_Pin
-                          |H_BRIDGE_EN2_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(SPIRIT1_CSn_GPIO_Port, SPIRIT1_CSn_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, SPIRIT1_SDN_Pin|DIODE1_Pin|DIODE2_Pin|DIODE3_Pin
-                          |DIODE4_Pin|DIODE5_Pin|DIODE6_Pin|CAM_CS_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : SD_DETECTED_Pin */
-  GPIO_InitStruct.Pin = SD_DETECTED_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(SD_DETECTED_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : SD_CS_Pin */
-  GPIO_InitStruct.Pin = SD_CS_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(SD_CS_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : Mosfet_controll_Pin */
-  GPIO_InitStruct.Pin = Mosfet_controll_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(Mosfet_controll_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : H_BRIDGE_nSLEEP_Pin H_BRIDGE_IN1_Pin H_BRIDGE_EN1_Pin H_BRIDGE_IN2_Pin
-                           H_BRIDGE_EN2_Pin */
-  GPIO_InitStruct.Pin = H_BRIDGE_nSLEEP_Pin|H_BRIDGE_IN1_Pin|H_BRIDGE_EN1_Pin|H_BRIDGE_IN2_Pin
-                          |H_BRIDGE_EN2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : SPIRIT1_CSn_Pin */
-  GPIO_InitStruct.Pin = SPIRIT1_CSn_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(SPIRIT1_CSn_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : SPIRIT1_GPIO3_Pin uSD_DETECT_Pin */
-  GPIO_InitStruct.Pin = SPIRIT1_GPIO3_Pin|uSD_DETECT_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : SPIRIT1_SDN_Pin DIODE1_Pin DIODE2_Pin DIODE3_Pin
-                           DIODE4_Pin DIODE5_Pin DIODE6_Pin CAM_CS_Pin */
-  GPIO_InitStruct.Pin = SPIRIT1_SDN_Pin|DIODE1_Pin|DIODE2_Pin|DIODE3_Pin
-                          |DIODE4_Pin|DIODE5_Pin|DIODE6_Pin|CAM_CS_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-/* USER CODE BEGIN MX_GPIO_Init_2 */
-/* USER CODE END MX_GPIO_Init_2 */
-}
-
 /* USER CODE BEGIN 4 */
+
+//Spirit1 functions
+
+void SPSGRF_StartTx(uint8_t *txBuff, uint8_t txLen) {
+	// flush the TX FIFO
+	SpiritCmdStrobeFlushTxFifo();
+
+	// Avoid TX FIFO overflow
+	//txLen = (txLen > MAX_BUFFER_LEN ? txLen : MAX_BUFFER_LEN);
+	txLen = (txLen > MAX_BUFFER_LEN ? MAX_BUFFER_LEN : txLen);
+
+	// start TX operation
+	SpiritSpiWriteLinearFifo(txLen, txBuff);
+	SpiritPktBasicSetPayloadLength(txLen);
+	SpiritCmdStrobeTx();
+}
+
+
+void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin) {
+	SpiritIrqs xIrqStatus;
+
+	if (GPIO_Pin != SPIRIT1_GPIO3_Pin) {
+		return;
+	}
+
+	SpiritIrqGetStatus(&xIrqStatus);
+	if (xIrqStatus.IRQ_TX_DATA_SENT) {
+		xTxDoneFlag = S_SET;
+	}
+	if (xIrqStatus.IRQ_RX_DATA_READY) {
+
+	}
+	if (xIrqStatus.IRQ_RX_DATA_DISC || xIrqStatus.IRQ_RX_TIMEOUT) {
+		SpiritCmdStrobeRx();
+	}
+}
+
 
 /* USER CODE END 4 */
 
