@@ -33,7 +33,7 @@
 #include <string.h> /* memset */
 
 #include "string.h"
-//#include "ArduCAM.h"
+#include "ArduCAM.h"
 #include <stdbool.h>
 /* USER CODE END Includes */
 
@@ -117,6 +117,18 @@ void SystemClock_Config(void);
 
 
 void SPSGRF_StartTx(uint8_t *txBuff, uint8_t txLen);
+volatile bool checkForLastBit(uint8_t temp, uint8_t temp_last);
+volatile bool checkForFirstBit(uint8_t temp, uint8_t temp_last);
+
+
+//Camera function prototypes
+int wrSensorRegs16_8(const struct sensor_reg reglist[]);
+void initCam();
+uint8_t wrSensorReg16_8(int regID, int regDat);
+uint8_t rdSensorReg16_8(uint16_t regID, uint8_t* regDat);
+void write_reg(int address,int value);
+uint8_t get_bit(uint8_t addr, uint8_t bit);
+
 
 /* USER CODE END PFP */
 
@@ -175,6 +187,70 @@ int main(void)
   MX_SPI3_Init();
   MX_ICACHE_Init();
   /* USER CODE BEGIN 2 */
+
+
+
+	//camera init
+
+//
+//	HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin, GPIO_PIN_SET);
+//	HAL_Delay(100);
+//	//Check if SPI  communication with camera module is working
+//	while (spi_recv_buf != 0x55) {
+//		spi_buf = 0x00 | 0x80;
+//		HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin, GPIO_PIN_RESET);
+//		temp = HAL_SPI_TransmitReceive(&hspi2, &spi_buf, &spi_recv_buf, 1, 100);
+//
+//		spi_buf = 0x55;
+//		temp = HAL_SPI_TransmitReceive(&hspi2, &spi_buf, &spi_recv_buf, 1, 100);
+//		HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin, GPIO_PIN_SET);
+//
+//		spi_buf = 0x00;
+//		HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin, GPIO_PIN_RESET);
+//		temp = HAL_SPI_TransmitReceive(&hspi2, &spi_buf, &spi_recv_buf, 1, 100);
+//
+//		spi_buf = 0x55;
+//		temp = HAL_SPI_TransmitReceive(&hspi2, &spi_buf, &spi_recv_buf, 1, 100);
+//		HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin, GPIO_PIN_SET);
+//
+//		if (spi_recv_buf != 0x55) {
+//			HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
+//			HAL_Delay(1000);
+//		} else {
+//			HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin); //Tooge diode when Camera  responds correctly
+//			HAL_Delay(1000);
+//
+//		}
+//	}
+//	//Check if the camera module type is OV5642
+//	wrSensorReg16_8(0xff, 0x01);
+//	rdSensorReg16_8(OV5642_CHIPID_HIGH, &vid);
+//	rdSensorReg16_8(OV5642_CHIPID_LOW, &pid);
+//	//Check if camera module responds
+//	if ((vid != 0x56) || (pid != 0x42)) {
+//		//Serial.println("Can't find OV5642 module!");
+//		while (1);
+//	}
+//
+//	// init cam
+//	initCam();
+//
+//	// Write ARDUCHIP_TIM, VSYNC_LEVEL_MASK to spi
+//	write_reg(ARDUCHIP_TIM, VSYNC_LEVEL_MASK);
+//
+//	//Change picture size
+//
+//	wrSensorRegs16_8(ov5642_1280x960);
+//
+//	// Close auto exposure mode
+//	//uint8_t _x3503;
+//	//wrSensorReg16_8(0x5001,_x3503|0x01);
+//	//Manually set the exposure value
+//	wrSensorReg16_8(0x3500, 0x00);
+//	wrSensorReg16_8(0x3501, 0x79);
+//	wrSensorReg16_8(0x3502, 0xe0);
+
+
 
   /*
  	 *
@@ -285,6 +361,28 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+
+//	  //Take picture
+//	  //Clear fifo flag
+//	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
+//
+//	  // Start capture
+//	  write_reg(ARDUCHIP_FIFO, FIFO_RDPTR_RST_MASK);
+//
+//	  ///Flush FIFO buffer
+//	  write_reg(ARDUCHIP_FIFO, FIFO_WRPTR_RST_MASK);
+//
+//	  //Clear fifo flag
+//	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
+//
+//	  // Start capture
+//	  write_reg(ARDUCHIP_FIFO, FIFO_START_MASK);
+//
+//	  //Wait for capture to be done
+//	  while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+
+
 	  HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin);
 	  HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin);
 	  HAL_GPIO_TogglePin(DIODE3_GPIO_Port, DIODE3_Pin);
@@ -386,6 +484,131 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin) {
 	}
 }
 
+bool checkForLastBit(uint8_t temp, uint8_t temp_last) {
+	if (temp != 0xD9) {
+		return true;
+	}
+	if (temp_last != 0xFF) {
+		return true;
+	}
+	return false;
+}
+
+bool checkForFirstBit(uint8_t temp, uint8_t temp_last) {
+	if (temp != 0xD8) {
+		return true;
+	}
+	if (temp_last != 0xFF) {
+		return true;
+	}
+	return false;
+}
+
+//Camera functions
+
+void initCam() {
+
+	wrSensorReg16_8(0x3008, 0x80);
+	wrSensorRegs16_8(OV5642_QVGA_Preview);
+
+	HAL_Delay(200);
+
+	wrSensorRegs16_8(OV5642_JPEG_Capture_QSXGA);
+	wrSensorRegs16_8(ov5642_320x240);
+	HAL_Delay(100);
+
+	wrSensorReg16_8(0x3818, 0xa8);
+	wrSensorReg16_8(0x3621, 0x10);
+	wrSensorReg16_8(0x3801, 0xb0);
+	wrSensorReg16_8(0x4407, 0x08);
+	wrSensorReg16_8(0x5888, 0x00);
+	wrSensorReg16_8(0x5000, 0xFF);
+}
+
+int wrSensorRegs16_8(const struct sensor_reg reglist[]) {
+
+	unsigned int reg_addr;
+	unsigned char reg_val;
+	const struct sensor_reg *next = reglist;
+
+	while ((reg_addr != 0xffff) | (reg_val != 0xff)) {
+
+		reg_addr = pgm_read_word(&next->reg);
+		reg_val = pgm_read_word(&next->val);
+
+		wrSensorReg16_8(reg_addr, reg_val);
+
+		next++;
+
+	}
+	return 1;
+}
+
+uint8_t rdSensorReg16_8(uint16_t regID, uint8_t *regDat) {
+
+	uint8_t I2C_buf_register[2];
+
+	I2C_buf_register[0] = regID >> 8;
+	I2C_buf_register[1] = regID & 0x00FF;
+	HAL_I2C_Master_Transmit(&hi2c1, 0x78, I2C_buf_register, 2, HAL_MAX_DELAY);
+
+	HAL_I2C_Master_Receive(&hi2c1, 0x79, regDat, 1, HAL_MAX_DELAY);
+
+	HAL_Delay(1);
+
+	return 1;
+}
+
+uint8_t wrSensorReg16_8(int regID, int regDat) {
+	uint8_t ret = 0;
+	uint8_t I2C_buf_register[3];
+
+	I2C_buf_register[0] = regID >> 8;
+	I2C_buf_register[1] = regID & 0x00FF;
+	I2C_buf_register[2] = regDat & 0x00FF;
+	ret = HAL_I2C_Master_Transmit(&hi2c1, 0x78, I2C_buf_register, 3,
+			HAL_MAX_DELAY);
+
+	return 1;
+}
+
+void write_reg(int address, int value) {
+	uint8_t temp = 0;
+	uint8_t spi_recv_buf = 0;
+	uint8_t spi_buf;
+
+	spi_buf = address | 0x80;
+	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+	temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+
+	spi_buf = value;
+	temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+
+}
+
+uint8_t read_reg(int address) {
+	uint8_t temp = 0;
+	uint8_t spi_recv_buf = 0;
+	uint8_t spi_buf;
+
+	spi_buf = address;
+	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+	temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+
+	spi_buf = 0x00;
+	temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+	return spi_recv_buf;
+
+}
+
+uint8_t get_bit(uint8_t addr, uint8_t bit) {
+	uint8_t temp;
+	temp = read_reg(addr & 0x7F);
+	temp = temp & bit;
+	return temp;
+}
 
 /* USER CODE END 4 */
 
