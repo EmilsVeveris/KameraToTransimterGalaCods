@@ -47,18 +47,66 @@
 
 //Spirit1 parameters
 
+//#define XTAL_FREQUENCY              50000000
+//
+///*  Radio configuration parameters  */
+//#define XTAL_OFFSET_PPM             0
+////#define INFINITE_TIMEOUT            0.0
+//#define BASE_FREQUENCY              433.0e6
+//#define CHANNEL_SPACE               100e3
+//#define CHANNEL_NUMBER              0
+//#define MODULATION_SELECT           FSK
+//#define DATARATE                    38400
+//#define FREQ_DEVIATION              20e3
+//#define BANDWIDTH                   100E3
+//
+//#define POWER_INDEX                 7
+//#define POWER_DBM                   11.6
+//
+////#define RECEIVE_TIMEOUT             2000.0 // change the value for required timeout period
+//#define RSSI_THRESHOLD              -120  // Default RSSI at reception, more than noise floor
+////#define CSMA_RSSI_THRESHOLD         -90   // Higher RSSI to Transmit. If it's lower, the Channel will be seen as busy.
+//
+/////*  Packet configuration parameters  */
+//#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_16BYTES
+//#define SYNC_LENGTH                 PKT_SYNC_LENGTH_4BYTES
+//#define SYNC_WORD                   0x88888888
+//#define LENGTH_TYPE                 PKT_LENGTH_VAR
+//#define LENGTH_WIDTH                7
+//#define CRC_MODE                    PKT_CRC_MODE_8BITS
+//#define CONTROL_LENGTH              PKT_CONTROL_LENGTH_0BYTES
+//#define EN_ADDRESS                  S_ENABLE
+//#define EN_FEC                      S_DISABLE
+//#define EN_WHITENING                S_ENABLE
+//
+//#define EN_FILT_MY_ADDRESS          S_ENABLE
+//#define EN_FILT_MULTICAST_ADDRESS   S_ENABLE
+//#define EN_FILT_BROADCAST_ADDRESS   S_ENABLE
+//#define MY_ADDRESS                  0x44
+//#define MULTICAST_ADDRESS           0xEE
+//#define BROADCAST_ADDRESS           0xFF
+//
+//#define MAX_BUFFER_LEN              96
+//#define MAX_PAYLOAD_LEN             126 // (2^7 - 1) - 1 - 0 = 126 (LENGTH_WID=7, 1 address byte, & 0 control bytes)
+
+
+
+
+//#define PAYLOAD_LEN             80
+
+
 #define XTAL_FREQUENCY              50000000
 
 /*  Radio configuration parameters  */
 #define XTAL_OFFSET_PPM             0
 //#define INFINITE_TIMEOUT            0.0
-#define BASE_FREQUENCY              433.0e6
+#define BASE_FREQUENCY              915.0e6
 #define CHANNEL_SPACE               100e3
 #define CHANNEL_NUMBER              0
 #define MODULATION_SELECT           FSK
 #define DATARATE                    38400
 #define FREQ_DEVIATION              20e3
-#define BANDWIDTH                   500E3
+#define BANDWIDTH                   100E3
 
 #define POWER_INDEX                 7
 #define POWER_DBM                   11.6
@@ -68,7 +116,7 @@
 //#define CSMA_RSSI_THRESHOLD         -90   // Higher RSSI to Transmit. If it's lower, the Channel will be seen as busy.
 
 ///*  Packet configuration parameters  */
-#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_16BYTES
+#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_04BYTES
 #define SYNC_LENGTH                 PKT_SYNC_LENGTH_4BYTES
 #define SYNC_WORD                   0x88888888
 #define LENGTH_TYPE                 PKT_LENGTH_VAR
@@ -89,12 +137,7 @@
 #define MAX_BUFFER_LEN              96
 #define MAX_PAYLOAD_LEN             126 // (2^7 - 1) - 1 - 0 = 126 (LENGTH_WID=7, 1 address byte, & 0 control bytes)
 
-
-
-
-#define PAYLOAD_LEN             80
-
-
+#define PAYLOAD_LEN             20
 
 /* USER CODE END PD */
 
@@ -117,6 +160,8 @@ void SystemClock_Config(void);
 
 
 void SPSGRF_StartTx(uint8_t *txBuff, uint8_t txLen);
+void SPSGRF_StartRx(void);
+  uint8_t SPSGRF_GetRxData(uint8_t *rxBuff);
 volatile bool checkForLastBit(uint8_t temp, uint8_t temp_last);
 volatile bool checkForFirstBit(uint8_t temp, uint8_t temp_last);
 
@@ -137,7 +182,7 @@ uint8_t get_bit(uint8_t addr, uint8_t bit);
 
 //Spirit1 flag status
 volatile SpiritFlagStatus xTxDoneFlag;
-
+volatile SpiritFlagStatus xRxDoneFlag;
 /* USER CODE END 0 */
 
 /**
@@ -148,10 +193,11 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	//Variables
-
+	uint8_t rxLen;
+	uint8_t recived_payload[PAYLOAD_LEN];
 	uint8_t buffer_TX[PAYLOAD_LEN] = {0x00};
-	uint8_t buffer_RX[PAYLOAD_LEN] = "Hello world ";
-
+	uint8_t buffer_RX[PAYLOAD_LEN] = {0x02};
+	char payload[20] = "Hello World!\r\n";
 	uint8_t state = 0;
 
 	uint8_t temp = 0, lastBitFound = 0;
@@ -324,12 +370,12 @@ int main(void)
  	SpiritGpioInit(&xGpioInit);
 
  	// Generate an interrupt request for the following IRQs
- 	SpiritIrqDeInit(NULL);
- 	SpiritIrq(TX_DATA_SENT, S_ENABLE);
- 	SpiritIrq(RX_DATA_READY, S_ENABLE);
- 	SpiritIrq(RX_DATA_DISC, S_ENABLE);
- 	SpiritIrq(RX_TIMEOUT, S_ENABLE);
- 	SpiritIrqClearStatus();
+// 	SpiritIrqDeInit(NULL);
+// 	SpiritIrq(TX_DATA_SENT, S_ENABLE);
+// 	SpiritIrq(RX_DATA_READY, S_ENABLE);
+// 	SpiritIrq(RX_DATA_DISC, S_ENABLE);
+// 	SpiritIrq(RX_TIMEOUT, S_ENABLE);
+// 	SpiritIrqClearStatus();
 
  	// Enable the synchronization quality indicator check (perfect match required)
  	// NOTE: 9.10.4: "It is recommended to always enable the SQI check."
@@ -383,6 +429,7 @@ int main(void)
 //	  while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
 
 
+
 	  HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin);
 	  HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin);
 	  HAL_GPIO_TogglePin(DIODE3_GPIO_Port, DIODE3_Pin);
@@ -391,10 +438,16 @@ int main(void)
 	  HAL_GPIO_TogglePin(DIODE6_GPIO_Port, DIODE6_Pin);
 
 
-	  //Spirit1 send data
-	  xTxDoneFlag = S_RESET;
-	  SPSGRF_StartTx(buffer_RX, sizeof(buffer_RX));
-	  while (!xTxDoneFlag);
+//	  //Spirit1 send data
+//	  xTxDoneFlag = S_RESET;
+//	  SPSGRF_StartTx(payload, strlen(payload));
+//	  while(!xTxDoneFlag);
+
+//	  xRxDoneFlag = S_RESET;
+//	 	      SPSGRF_StartRx();
+//	 	      while (!xRxDoneFlag);
+//
+//	 	      rxLen = SPSGRF_GetRxData(recived_payload);
 
 	  HAL_Delay(500);
   }
@@ -464,6 +517,20 @@ void SPSGRF_StartTx(uint8_t *txBuff, uint8_t txLen) {
 	SpiritCmdStrobeTx();
 }
 
+void SPSGRF_StartRx(void)
+{
+  SpiritCmdStrobeRx();
+}
+
+uint8_t SPSGRF_GetRxData(uint8_t *rxBuff)
+{
+  uint8_t len;
+
+  len = SpiritLinearFifoReadNumElementsRxFifo();
+  SpiritSpiReadLinearFifo(len, rxBuff);
+
+  return len;
+}
 
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin) {
 	SpiritIrqs xIrqStatus;
@@ -477,7 +544,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin) {
 		xTxDoneFlag = S_SET;
 	}
 	if (xIrqStatus.IRQ_RX_DATA_READY) {
-
+		xRxDoneFlag = S_SET;
 	}
 	if (xIrqStatus.IRQ_RX_DATA_DISC || xIrqStatus.IRQ_RX_TIMEOUT) {
 		SpiritCmdStrobeRx();

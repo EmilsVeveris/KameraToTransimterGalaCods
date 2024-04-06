@@ -19,7 +19,7 @@
 
 
 /* Exported constants --------------------------------------------------------*/
-SPI_HandleTypeDef *radioSpi = &hspi1;
+SPI_HandleTypeDef *radioSpi = &hspi2;
 
 #define RADIO_GPIO_IRQ        SPIRIT1_GPIO3_EXTI_IRQn
 #define SPI_ENTER_CRITICAL()  HAL_NVIC_DisableIRQ(RADIO_GPIO_IRQ);
