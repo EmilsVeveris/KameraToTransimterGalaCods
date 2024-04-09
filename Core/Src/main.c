@@ -100,7 +100,7 @@
 /*  Radio configuration parameters  */
 #define XTAL_OFFSET_PPM             0
 //#define INFINITE_TIMEOUT            0.0
-#define BASE_FREQUENCY              915.0e6
+#define BASE_FREQUENCY              433.0e6
 #define CHANNEL_SPACE               100e3
 #define CHANNEL_NUMBER              0
 #define MODULATION_SELECT           FSK
@@ -174,7 +174,8 @@ uint8_t rdSensorReg16_8(uint16_t regID, uint8_t* regDat);
 void write_reg(int address,int value);
 uint8_t get_bit(uint8_t addr, uint8_t bit);
 
-
+void turnCameraOff();
+void turnCameraOn();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -236,34 +237,40 @@ int main(void)
 
 
 
-	//camera init
-
+//	//camera init
+//  turnCameraOff();
+//  HAL_Delay(100);
+//  turnCameraOn();
 //
-//	HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin, GPIO_PIN_SET);
+//  HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_SET);
+//  HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_SET);
+//  HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN1_Pin, GPIO_PIN_SET);
+//
+//	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 //	HAL_Delay(100);
 //	//Check if SPI  communication with camera module is working
 //	while (spi_recv_buf != 0x55) {
 //		spi_buf = 0x00 | 0x80;
-//		HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin, GPIO_PIN_RESET);
-//		temp = HAL_SPI_TransmitReceive(&hspi2, &spi_buf, &spi_recv_buf, 1, 100);
+//		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+//		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
 //
 //		spi_buf = 0x55;
-//		temp = HAL_SPI_TransmitReceive(&hspi2, &spi_buf, &spi_recv_buf, 1, 100);
-//		HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin, GPIO_PIN_SET);
+//		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+//		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 //
 //		spi_buf = 0x00;
-//		HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin, GPIO_PIN_RESET);
-//		temp = HAL_SPI_TransmitReceive(&hspi2, &spi_buf, &spi_recv_buf, 1, 100);
+//		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+//		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
 //
 //		spi_buf = 0x55;
-//		temp = HAL_SPI_TransmitReceive(&hspi2, &spi_buf, &spi_recv_buf, 1, 100);
-//		HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin, GPIO_PIN_SET);
+//		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+//		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 //
 //		if (spi_recv_buf != 0x55) {
-//			HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
+//			HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
 //			HAL_Delay(1000);
 //		} else {
-//			HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin); //Tooge diode when Camera  responds correctly
+//			HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin); //Tooge diode when Camera  responds correctly
 //			HAL_Delay(1000);
 //
 //		}
@@ -295,7 +302,7 @@ int main(void)
 //	wrSensorReg16_8(0x3500, 0x00);
 //	wrSensorReg16_8(0x3501, 0x79);
 //	wrSensorReg16_8(0x3502, 0xe0);
-
+//
 
 
   /*
@@ -370,12 +377,12 @@ int main(void)
  	SpiritGpioInit(&xGpioInit);
 
  	// Generate an interrupt request for the following IRQs
-// 	SpiritIrqDeInit(NULL);
-// 	SpiritIrq(TX_DATA_SENT, S_ENABLE);
-// 	SpiritIrq(RX_DATA_READY, S_ENABLE);
-// 	SpiritIrq(RX_DATA_DISC, S_ENABLE);
-// 	SpiritIrq(RX_TIMEOUT, S_ENABLE);
-// 	SpiritIrqClearStatus();
+ 	SpiritIrqDeInit(NULL);
+ 	SpiritIrq(TX_DATA_SENT, S_ENABLE);
+ 	SpiritIrq(RX_DATA_READY, S_ENABLE);
+ 	SpiritIrq(RX_DATA_DISC, S_ENABLE);
+ 	SpiritIrq(RX_TIMEOUT, S_ENABLE);
+ 	SpiritIrqClearStatus();
 
  	// Enable the synchronization quality indicator check (perfect match required)
  	// NOTE: 9.10.4: "It is recommended to always enable the SQI check."
@@ -396,7 +403,7 @@ int main(void)
 
  	SpiritPktBasicSetDestinationAddress(0x44);
 
- 	xTxDoneFlag = S_SET;
+
 
   /* USER CODE END 2 */
 
@@ -427,29 +434,39 @@ int main(void)
 //
 //	  //Wait for capture to be done
 //	  while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+//
+//		while (1) {
+//			HAL_GPIO_WritePin(DIODE1_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+//
+//			spi_buf = BURST_FIFO_READ;
+//			temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1,
+//					100);
+//
+//			temp = HAL_SPI_TransmitReceive(&hspi3, buffer_TX, buffer_RX,
+//			PAYLOAD_LEN, 200);
+//			for (var = 0; var < PAYLOAD_LEN; ++var) {
+//
+//				if (!checkForLastBit(buffer_RX[var], tempData_last)) {
+//					lastBitFound = 1;
+//					break;
+//				}
+//				tempData_last = buffer_RX[var];
+//			}
+//		}
 
 
-
-	  HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin);
-	  HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin);
-	  HAL_GPIO_TogglePin(DIODE3_GPIO_Port, DIODE3_Pin);
-	  HAL_GPIO_TogglePin(DIODE4_GPIO_Port, DIODE4_Pin);
-	  HAL_GPIO_TogglePin(DIODE5_GPIO_Port, DIODE5_Pin);
-	  HAL_GPIO_TogglePin(DIODE6_GPIO_Port, DIODE6_Pin);
-
-
-//	  //Spirit1 send data
-//	  xTxDoneFlag = S_RESET;
-//	  SPSGRF_StartTx(payload, strlen(payload));
-//	  while(!xTxDoneFlag);
+	  //Spirit1 send data
+	  xTxDoneFlag = S_RESET;
+	  SPSGRF_StartTx(payload, strlen(payload));
+	  while(!xTxDoneFlag);
 
 //	  xRxDoneFlag = S_RESET;
 //	 	      SPSGRF_StartRx();
 //	 	      while (!xRxDoneFlag);
 //
 //	 	      rxLen = SPSGRF_GetRxData(recived_payload);
-
-	  HAL_Delay(500);
+//
+//	  HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
@@ -675,6 +692,17 @@ uint8_t get_bit(uint8_t addr, uint8_t bit) {
 	temp = read_reg(addr & 0x7F);
 	temp = temp & bit;
 	return temp;
+}
+
+
+void turnCameraOff()
+{
+	HAL_GPIO_WritePin(Mosfet_controll_GPIO_Port, Mosfet_controll_Pin, 1);
+
+}
+void turnCameraOn()
+{
+	HAL_GPIO_WritePin(Mosfet_controll_GPIO_Port, Mosfet_controll_Pin, 0);
 }
 
 /* USER CODE END 4 */
