@@ -19,7 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "i2c.h"
-#include "icache.h"
 #include "memorymap.h"
 #include "spi.h"
 #include "gpio.h"
@@ -28,7 +27,8 @@
 /* USER CODE BEGIN Includes */
 #include "SPIRIT_Config.h"
 
-//#include "fatfs_sd.h"
+#include "app_fatfs.h"
+#include "fatfs_sd.h"
 
 #include <string.h> /* memset */
 
@@ -149,7 +149,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+char dbgbuffer[40] = "EMPTY";
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -184,6 +184,20 @@ void turnCameraOn();
 //Spirit1 flag status
 volatile SpiritFlagStatus xTxDoneFlag;
 volatile SpiritFlagStatus xRxDoneFlag;
+
+FATFS fs;  // file system
+FIL testFile; // Files
+FILINFO fno;
+FRESULT fresult;  // status result
+UINT br, bw;  // File read/write count
+
+FATFS *pfs;
+DWORD fre_clust;
+uint32_t total, free_space;
+
+char textBuffer[40];
+char buffer [255];
+
 /* USER CODE END 0 */
 
 /**
@@ -232,80 +246,108 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI2_Init();
   MX_SPI3_Init();
-  MX_ICACHE_Init();
   /* USER CODE BEGIN 2 */
+  //init fatfs
+  if (MX_FATFS_Init() != APP_OK) {
+      Error_Handler();
+    }
+
+  // MOUNT SD CARD
+
+  	fresult = f_mount(&fs, "/", 1);
+    if (fresult != FR_OK) {
+  	  strcpy(dbgbuffer, "ERROR MOUNTING SDCARD!");
+    } else {
+  	  strcpy(dbgbuffer, "SDCARD MOUNTED!");
+    }
+
+	fresult = f_open(&testFile, "STM34.txt", FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
+
+	if (fresult != FR_OK) {
+		strcpy(dbgbuffer, "ERROR CREATING FILE!");
+	} else {
+		strcpy(dbgbuffer, "FILE CREATED!");
+	}
+
+	f_close(&testFile);
+
+	fresult = f_mount(NULL, "/", 1);
+	if (fresult == FR_OK) {
+		strcpy(dbgbuffer, "SDCARD UNMOUNTED!");
+	} else {
+		strcpy(dbgbuffer, "ERROR UNMOUNTING SDCARD!");
+	}
+
+
+	//camera init
+	turnCameraOff();
+	HAL_Delay(100);
+	turnCameraOn();
+
+	HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN1_Pin, GPIO_PIN_SET);
+
+	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+	HAL_Delay(100);
+	//Check if SPI  communication with camera module is working
+	while (spi_recv_buf != 0x55) {
+		spi_buf = 0x00 | 0x80;
+		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+		spi_buf = 0x55;
+		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+
+		spi_buf = 0x00;
+		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+
+		spi_buf = 0x55;
+
+		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+
+		if (spi_recv_buf != 0x55) {
+			HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
+			HAL_Delay(1000);
+		} else {
+			HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin); //Tooge diode when Camera  responds correctly
+			HAL_Delay(1000);
+
+		}
+	}
+	//Check if the camera module type is OV5642
+	wrSensorReg16_8(0xff, 0x01);
+	rdSensorReg16_8(OV5642_CHIPID_HIGH, &vid);
+	rdSensorReg16_8(OV5642_CHIPID_LOW, &pid);
+	//Check if camera module responds
+	if ((vid != 0x56) || (pid != 0x42)) {
+		//Serial.println("Can't find OV5642 module!");
+		while (1);
+	}
+
+	// init cam
+	initCam();
+
+	// Write ARDUCHIP_TIM, VSYNC_LEVEL_MASK to spi
+	write_reg(ARDUCHIP_TIM, VSYNC_LEVEL_MASK);
+
+	//Change picture size
+
+	wrSensorRegs16_8(ov5642_1280x960);
+
+	// Close auto exposure mode
+	//uint8_t _x3503;
+	//wrSensorReg16_8(0x5001,_x3503|0x01);
+	//Manually set the exposure value
+	wrSensorReg16_8(0x3500, 0x00);
+	wrSensorReg16_8(0x3501, 0x79);
+	wrSensorReg16_8(0x3502, 0xe0);
 
 
 
-//	//camera init
-//  turnCameraOff();
-//  HAL_Delay(100);
-//  turnCameraOn();
-//
-//  HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_SET);
-//  HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_SET);
-//  HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN1_Pin, GPIO_PIN_SET);
-//
-//	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-//	HAL_Delay(100);
-//	//Check if SPI  communication with camera module is working
-//	while (spi_recv_buf != 0x55) {
-//		spi_buf = 0x00 | 0x80;
-//		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
-//		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-//
-//		spi_buf = 0x55;
-//		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-//		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-//
-//		spi_buf = 0x00;
-//		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
-//		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-//
-//		spi_buf = 0x55;
-//		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-//		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-//
-//		if (spi_recv_buf != 0x55) {
-//			HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
-//			HAL_Delay(1000);
-//		} else {
-//			HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin); //Tooge diode when Camera  responds correctly
-//			HAL_Delay(1000);
-//
-//		}
-//	}
-//	//Check if the camera module type is OV5642
-//	wrSensorReg16_8(0xff, 0x01);
-//	rdSensorReg16_8(OV5642_CHIPID_HIGH, &vid);
-//	rdSensorReg16_8(OV5642_CHIPID_LOW, &pid);
-//	//Check if camera module responds
-//	if ((vid != 0x56) || (pid != 0x42)) {
-//		//Serial.println("Can't find OV5642 module!");
-//		while (1);
-//	}
-//
-//	// init cam
-//	initCam();
-//
-//	// Write ARDUCHIP_TIM, VSYNC_LEVEL_MASK to spi
-//	write_reg(ARDUCHIP_TIM, VSYNC_LEVEL_MASK);
-//
-//	//Change picture size
-//
-//	wrSensorRegs16_8(ov5642_1280x960);
-//
-//	// Close auto exposure mode
-//	//uint8_t _x3503;
-//	//wrSensorReg16_8(0x5001,_x3503|0x01);
-//	//Manually set the exposure value
-//	wrSensorReg16_8(0x3500, 0x00);
-//	wrSensorReg16_8(0x3501, 0x79);
-//	wrSensorReg16_8(0x3502, 0xe0);
-//
-
-
-  /*
+	/*
  	 *
  	 *
  	 *
@@ -414,58 +456,64 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+/*
+ * Nolasa bildi
+ * Saglabā SD kartē
+ * Nolasa bildi citrā spektrā
+ * Saglabā sd kartē
+ * Samazina rezolūciju
+ * Nolasa bildi
+ * Saglabā SD kartē
+ * Izslēdz kameru
+ * Nosūta uz zemi
+ *
+ *
+ */
 
+	  //Take picture
+	  //Clear fifo flag
+	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
 
-//	  //Take picture
-//	  //Clear fifo flag
-//	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
-//
-//	  // Start capture
-//	  write_reg(ARDUCHIP_FIFO, FIFO_RDPTR_RST_MASK);
-//
-//	  ///Flush FIFO buffer
-//	  write_reg(ARDUCHIP_FIFO, FIFO_WRPTR_RST_MASK);
-//
-//	  //Clear fifo flag
-//	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
-//
-//	  // Start capture
-//	  write_reg(ARDUCHIP_FIFO, FIFO_START_MASK);
-//
-//	  //Wait for capture to be done
-//	  while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
-//
-//		while (1) {
-//			HAL_GPIO_WritePin(DIODE1_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
-//
-//			spi_buf = BURST_FIFO_READ;
-//			temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1,
-//					100);
-//
-//			temp = HAL_SPI_TransmitReceive(&hspi3, buffer_TX, buffer_RX,
-//			PAYLOAD_LEN, 200);
-//			for (var = 0; var < PAYLOAD_LEN; ++var) {
-//
-//				if (!checkForLastBit(buffer_RX[var], tempData_last)) {
-//					lastBitFound = 1;
-//					break;
-//				}
-//				tempData_last = buffer_RX[var];
-//			}
-//		}
+	  // Start capture
+	  write_reg(ARDUCHIP_FIFO, FIFO_RDPTR_RST_MASK);
+
+	  ///Flush FIFO buffer
+	  write_reg(ARDUCHIP_FIFO, FIFO_WRPTR_RST_MASK);
+
+	  //Clear fifo flag
+	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
+
+	  // Start capture
+	  write_reg(ARDUCHIP_FIFO, FIFO_START_MASK);
+
+	  //Wait for capture to be done
+	  while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+
+		while (1) {
+			HAL_GPIO_WritePin(DIODE1_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+
+			spi_buf = BURST_FIFO_READ;
+			temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1,
+					100);
+
+			temp = HAL_SPI_TransmitReceive(&hspi3, buffer_TX, buffer_RX,
+			PAYLOAD_LEN, 200);
+			for (var = 0; var < PAYLOAD_LEN; ++var) {
+
+				if (!checkForLastBit(buffer_RX[var], tempData_last)) {
+					lastBitFound = 1;
+					break;
+				}
+				tempData_last = buffer_RX[var];
+			}
+		}
 
 
 	  //Spirit1 send data
-	  xTxDoneFlag = S_RESET;
-	  SPSGRF_StartTx(payload, strlen(payload));
-	  while(!xTxDoneFlag);
+//	  xTxDoneFlag = S_RESET;
+//	  SPSGRF_StartTx(payload, strlen(payload));
+//	  while(!xTxDoneFlag);
 
-//	  xRxDoneFlag = S_RESET;
-//	 	      SPSGRF_StartRx();
-//	 	      while (!xRxDoneFlag);
-//
-//	 	      rxLen = SPSGRF_GetRxData(recived_payload);
-//
 //	  HAL_Delay(500);
   }
   /* USER CODE END 3 */
@@ -482,7 +530,7 @@ void SystemClock_Config(void)
 
   /** Configure the main internal regulator output voltage
   */
-  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE3) != HAL_OK)
+  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -493,7 +541,16 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
   RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_0;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_MSI;
+  RCC_OscInitStruct.PLL.PLLMBOOST = RCC_PLLMBOOST_DIV4;
+  RCC_OscInitStruct.PLL.PLLM = 3;
+  RCC_OscInitStruct.PLL.PLLN = 8;
+  RCC_OscInitStruct.PLL.PLLP = 1;
+  RCC_OscInitStruct.PLL.PLLQ = 2;
+  RCC_OscInitStruct.PLL.PLLR = 1;
+  RCC_OscInitStruct.PLL.PLLRGE = RCC_PLLVCIRANGE_1;
+  RCC_OscInitStruct.PLL.PLLFRACN = 0;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -504,8 +561,8 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2
                               |RCC_CLOCKTYPE_PCLK3;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV2;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB3CLKDivider = RCC_HCLK_DIV1;
