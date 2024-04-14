@@ -20,6 +20,7 @@
 #include "main.h"
 #include "i2c.h"
 #include "memorymap.h"
+#include "rtc.h"
 #include "spi.h"
 #include "gpio.h"
 
@@ -137,7 +138,7 @@
 #define MAX_BUFFER_LEN              96
 #define MAX_PAYLOAD_LEN             126 // (2^7 - 1) - 1 - 0 = 126 (LENGTH_WID=7, 1 address byte, & 0 control bytes)
 
-#define PAYLOAD_LEN             20
+#define PAYLOAD_LEN             80
 
 /* USER CODE END PD */
 
@@ -208,20 +209,26 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	//Variables
-	uint8_t rxLen;
-	uint8_t recived_payload[PAYLOAD_LEN];
+
 	uint8_t buffer_TX[PAYLOAD_LEN] = {0x00};
 	uint8_t buffer_RX[PAYLOAD_LEN] = {0x02};
 	char payload[20] = "Hello World!\r\n";
 	uint8_t state = 0;
 
-	uint8_t temp = 0, lastBitFound = 0;
+	uint8_t temp, lastBitFound = 0;
 	uint32_t count = 0, var = 0;
 	uint8_t spi_recv_buf = 0;
 	uint8_t spi_buf;
 	uint8_t tempData, tempData_last;
 
 	uint8_t vid, pid;
+
+    RTC_DateTypeDef gDate;
+    RTC_TimeTypeDef gTime;
+    char time[27];
+	//char temp_sd_data[1];
+	unsigned char temp_sd_data;
+	char buffer_SD [255];
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -246,12 +253,13 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI2_Init();
   MX_SPI3_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
   //init fatfs
   if (MX_FATFS_Init() != APP_OK) {
       Error_Handler();
-    }
-
+   }
+  set_time();
   // MOUNT SD CARD
 
   	fresult = f_mount(&fs, "/", 1);
@@ -261,22 +269,39 @@ int main(void)
   	  strcpy(dbgbuffer, "SDCARD MOUNTED!");
     }
 
-	fresult = f_open(&testFile, "STM34.txt", FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
+   /* Get the RTC current Time */
+//    HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
+//   /* Get the RTC current Date */
+//    HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+//   /* Display time Format: hh:mm:ss-dd-mm-yy */
+//    sprintf(time,"PIC-%02d-%02d-%02d-%02d-%02d-%2d.txt",gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date, gDate.Month, (2000 + gDate.Year));
+//    //sprintf(time,"PIC101.txt");
+//    //sprintf(time,"STM34.txt");
+//
+//	fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
+//
+//	if (fresult != FR_OK) {
+//		strcpy(dbgbuffer, "ERROR CREATING FILE!");
+//	} else {
+//		strcpy(dbgbuffer, "FILE CREATED!");
+//	}
+//
+//
+//
+//	fresult = f_puts("test1234", &testFile);
+//	if (fresult != FR_OK) {
+//			strcpy(dbgbuffer, "ERROR WRITING IN FILE!");
+//		} else {
+//			strcpy(dbgbuffer, "DATA WRITEN");
+//		}
+//	f_close(&testFile);
 
-	if (fresult != FR_OK) {
-		strcpy(dbgbuffer, "ERROR CREATING FILE!");
-	} else {
-		strcpy(dbgbuffer, "FILE CREATED!");
-	}
-
-	f_close(&testFile);
-
-	fresult = f_mount(NULL, "/", 1);
-	if (fresult == FR_OK) {
-		strcpy(dbgbuffer, "SDCARD UNMOUNTED!");
-	} else {
-		strcpy(dbgbuffer, "ERROR UNMOUNTING SDCARD!");
-	}
+//	fresult = f_mount(NULL, "/", 1);
+//	if (fresult == FR_OK) {
+//		strcpy(dbgbuffer, "SDCARD UNMOUNTED!");
+//	} else {
+//		strcpy(dbgbuffer, "ERROR UNMOUNTING SDCARD!");
+//	}
 
 
 	//camera init
@@ -335,7 +360,7 @@ int main(void)
 
 	//Change picture size
 
-	wrSensorRegs16_8(ov5642_1280x960);
+	wrSensorRegs16_8(ov5642_320x240);
 
 	// Close auto exposure mode
 	//uint8_t _x3503;
@@ -446,7 +471,6 @@ int main(void)
  	SpiritPktBasicSetDestinationAddress(0x44);
 
 
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -458,17 +482,39 @@ int main(void)
     /* USER CODE BEGIN 3 */
 /*
  * Nolasa bildi
- * Saglabā SD kartē
- * Nolasa bildi citrā spektrā
- * Saglabā sd kartē
+ * Saglab�? SD kartē
+ * Nolasa bildi citr�? spektr�?
+ * Saglab�? sd kartē
  * Samazina rezolūciju
  * Nolasa bildi
- * Saglabā SD kartē
+ * Saglab�? SD kartē
  * Izslēdz kameru
  * Nosūta uz zemi
  *
  *
  */
+
+	   /* Get the RTC current Time */
+	    HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
+	   /* Get the RTC current Date */
+	    HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+	   /* Display time Format: hh:mm:ss-dd-mm-yy */
+	    sprintf(time,"PIC-%02d-%02d-%02d-%02d-%02d-%2d.jpg",gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date, gDate.Month, (2000 + gDate.Year));
+	    //sprintf(time,"PIC101.txt");
+	    //sprintf(time,"STM34.txt");
+
+		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
+
+		if (fresult != FR_OK) {
+			strcpy(dbgbuffer, "ERROR CREATING FILE!");
+		} else {
+			strcpy(dbgbuffer, "FILE CREATED!");
+		}
+
+
+
+
+
 
 	  //Take picture
 	  //Clear fifo flag
@@ -487,10 +533,11 @@ int main(void)
 	  write_reg(ARDUCHIP_FIFO, FIFO_START_MASK);
 
 	  //Wait for capture to be done
-	  while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+	  while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0)
+		  ;
 
 		while (1) {
-			HAL_GPIO_WritePin(DIODE1_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
 
 			spi_buf = BURST_FIFO_READ;
 			temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1,
@@ -498,23 +545,48 @@ int main(void)
 
 			temp = HAL_SPI_TransmitReceive(&hspi3, buffer_TX, buffer_RX,
 			PAYLOAD_LEN, 200);
+			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+			count = count +1;
 			for (var = 0; var < PAYLOAD_LEN; ++var) {
-
+				//sprintf(temp_sd_data,"%b",buffer_RX[var]);
+				sprintf(buffer_SD,"%c",(unsigned char)buffer_RX[var]);
+				temp = (int)buffer_RX[var];
+				temp_sd_data = (unsigned char)temp;
+				fresult = f_puts(buffer_SD, &testFile);
+				if (fresult != FR_OK) {
+					strcpy(dbgbuffer, "ERROR WRITING IN FILE!");
+				} else {
+					strcpy(dbgbuffer, "DATA WRITEN");
+				}
 				if (!checkForLastBit(buffer_RX[var], tempData_last)) {
 					lastBitFound = 1;
+					HAL_GPIO_TogglePin(DIODE4_GPIO_Port, DIODE4_Pin); //Toogle if last bit is found
 					break;
+				}
+				if (!checkForFirstBit(buffer_RX[var], tempData_last)) {
+					HAL_GPIO_TogglePin(DIODE3_GPIO_Port, DIODE3_Pin); //Toogle if first bit is found
 				}
 				tempData_last = buffer_RX[var];
 			}
+			if (lastBitFound == 1) {
+				lastBitFound = 0;
+//				if(var > 77)
+//				{
+//					SPSGRF_StartTx(buffer_TX, sizeof(buffer_TX));
+//				}
+				break;
+			}
 		}
-
-
+		count = count * PAYLOAD_LEN;
+		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+		memset(buffer_RX, '\0', sizeof(buffer_RX));
 	  //Spirit1 send data
 //	  xTxDoneFlag = S_RESET;
 //	  SPSGRF_StartTx(payload, strlen(payload));
 //	  while(!xTxDoneFlag);
-
-//	  HAL_Delay(500);
+	f_close(&testFile);
+ 	  HAL_Delay(2000);
+	  count = 0;
   }
   /* USER CODE END 3 */
 }
@@ -537,10 +609,12 @@ void SystemClock_Config(void)
 
   /** Initializes the CPU, AHB and APB buses clocks
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
   RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_0;
+  RCC_OscInitStruct.LSIDiv = RCC_LSI_DIV1;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_MSI;
   RCC_OscInitStruct.PLL.PLLMBOOST = RCC_PLLMBOOST_DIV4;
