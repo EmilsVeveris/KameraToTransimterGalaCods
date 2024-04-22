@@ -117,7 +117,7 @@
 //#define CSMA_RSSI_THRESHOLD         -90   // Higher RSSI to Transmit. If it's lower, the Channel will be seen as busy.
 
 ///*  Packet configuration parameters  */
-#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_04BYTES
+#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_16BYTES
 #define SYNC_LENGTH                 PKT_SYNC_LENGTH_4BYTES
 #define SYNC_WORD                   0x88888888
 #define LENGTH_TYPE                 PKT_LENGTH_VAR
@@ -227,8 +227,7 @@ int main(void)
     RTC_TimeTypeDef gTime;
     char time[27];
 	//char temp_sd_data[1];
-	unsigned char temp_sd_data;
-	char buffer_SD [255];
+	unsigned char buffer_SD [255];
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -499,7 +498,7 @@ int main(void)
 	   /* Get the RTC current Date */
 	    HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
 	   /* Display time Format: hh:mm:ss-dd-mm-yy */
-	    sprintf(time,"PIC-%02d-%02d-%02d-%02d-%02d-%2d.jpg",gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date, gDate.Month, (2000 + gDate.Year));
+	    sprintf(time,"PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPG",gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date, gDate.Month, (2000 + gDate.Year));
 	    //sprintf(time,"PIC101.txt");
 	    //sprintf(time,"STM34.txt");
 
@@ -547,12 +546,16 @@ int main(void)
 			PAYLOAD_LEN, 200);
 			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 			count = count +1;
+
+			xTxDoneFlag = S_RESET;
+			SPSGRF_StartTx(buffer_RX, sizeof(buffer_RX));
+
+			while (!xTxDoneFlag);
+
 			for (var = 0; var < PAYLOAD_LEN; ++var) {
 				//sprintf(temp_sd_data,"%b",buffer_RX[var]);
 				sprintf(buffer_SD,"%c",(unsigned char)buffer_RX[var]);
-				temp = (int)buffer_RX[var];
-				temp_sd_data = (unsigned char)temp;
-				fresult = f_puts(buffer_SD, &testFile);
+				fresult = f_putc(*buffer_SD, &testFile);
 				if (fresult != FR_OK) {
 					strcpy(dbgbuffer, "ERROR WRITING IN FILE!");
 				} else {
@@ -570,21 +573,18 @@ int main(void)
 			}
 			if (lastBitFound == 1) {
 				lastBitFound = 0;
-//				if(var > 77)
-//				{
-//					SPSGRF_StartTx(buffer_TX, sizeof(buffer_TX));
-//				}
+				if(var > 77)
+				{
+					SPSGRF_StartTx(buffer_TX, sizeof(buffer_TX));
+				}
 				break;
 			}
 		}
 		count = count * PAYLOAD_LEN;
 		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 		memset(buffer_RX, '\0', sizeof(buffer_RX));
-	  //Spirit1 send data
-//	  xTxDoneFlag = S_RESET;
-//	  SPSGRF_StartTx(payload, strlen(payload));
-//	  while(!xTxDoneFlag);
-	f_close(&testFile);
+
+		f_close(&testFile);
  	  HAL_Delay(2000);
 	  count = 0;
   }
