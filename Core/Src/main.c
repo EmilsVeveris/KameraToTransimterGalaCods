@@ -359,7 +359,7 @@ int main(void)
 
 	//Change picture size
 
-	wrSensorRegs16_8(ov5642_320x240);
+	wrSensorRegs16_8(ov5642_2592x1944);
 
 	// Close auto exposure mode
 	//uint8_t _x3503;
@@ -498,11 +498,11 @@ int main(void)
 	   /* Get the RTC current Date */
 	    HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
 	   /* Display time Format: hh:mm:ss-dd-mm-yy */
-	    sprintf(time,"PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPG",gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date, gDate.Month, (2000 + gDate.Year));
+	    sprintf(time,"PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date, gDate.Month, (2000 + gDate.Year));
 	    //sprintf(time,"PIC101.txt");
 	    //sprintf(time,"STM34.txt");
 
-		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
+		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
 
 		if (fresult != FR_OK) {
 			strcpy(dbgbuffer, "ERROR CREATING FILE!");
@@ -547,15 +547,15 @@ int main(void)
 			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 			count = count +1;
 
-			xTxDoneFlag = S_RESET;
+			/*xTxDoneFlag = S_RESET;
 			SPSGRF_StartTx(buffer_RX, sizeof(buffer_RX));
 
-			while (!xTxDoneFlag);
+			while (!xTxDoneFlag);*/
 
 			for (var = 0; var < PAYLOAD_LEN; ++var) {
 				//sprintf(temp_sd_data,"%b",buffer_RX[var]);
-				sprintf(buffer_SD,"%c",(unsigned char)buffer_RX[var]);
-				fresult = f_putc(*buffer_SD, &testFile);
+				//sprintf(buffer_SD,"%c",(unsigned char)buffer_RX[var]);
+				fresult = f_putc((unsigned char)buffer_RX[var], &testFile);
 				if (fresult != FR_OK) {
 					strcpy(dbgbuffer, "ERROR WRITING IN FILE!");
 				} else {
@@ -573,6 +573,9 @@ int main(void)
 			}
 			if (lastBitFound == 1) {
 				lastBitFound = 0;
+				sprintf(buffer_SD,"%c",(unsigned char)32);
+				fresult = f_putc(*buffer_SD, &testFile);
+				fresult = f_putc(*buffer_SD, &testFile);
 				if(var > 77)
 				{
 					SPSGRF_StartTx(buffer_TX, sizeof(buffer_TX));
@@ -585,7 +588,7 @@ int main(void)
 		memset(buffer_RX, '\0', sizeof(buffer_RX));
 
 		f_close(&testFile);
- 	  HAL_Delay(2000);
+ 	  HAL_Delay(10000);
 	  count = 0;
   }
   /* USER CODE END 3 */
