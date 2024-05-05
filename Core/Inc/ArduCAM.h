@@ -1,8 +1,6 @@
-////#ifndef __ARDUCAM_H
-//#define __ARDUCAM_H
-//
-//#define byte uint8_t
-//
+#ifndef __ARDUCAM_H
+#define __ARDUCAM_H
+
 #include "ov5642_regs.h"
 
 
@@ -30,3 +28,6 @@
 #define SINGLE_FIFO_READ		0x3D
 
 #define SINGLE_FIFO_READ		0x3D
+
+
+#endif

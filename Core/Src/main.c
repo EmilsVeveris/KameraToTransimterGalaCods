@@ -26,7 +26,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "SPIRIT_Config.h"
+
 
 #include "app_fatfs.h"
 #include "fatfs_sd.h"
@@ -36,6 +36,9 @@
 #include "string.h"
 #include "ArduCAM.h"
 #include <stdbool.h>
+
+#include "Spirit1_function.h"
+#include "programm_function.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,97 +51,6 @@
 
 //Spirit1 parameters
 
-//#define XTAL_FREQUENCY              50000000
-//
-///*  Radio configuration parameters  */
-//#define XTAL_OFFSET_PPM             0
-////#define INFINITE_TIMEOUT            0.0
-//#define BASE_FREQUENCY              433.0e6
-//#define CHANNEL_SPACE               100e3
-//#define CHANNEL_NUMBER              0
-//#define MODULATION_SELECT           FSK
-//#define DATARATE                    38400
-//#define FREQ_DEVIATION              20e3
-//#define BANDWIDTH                   100E3
-//
-//#define POWER_INDEX                 7
-//#define POWER_DBM                   11.6
-//
-////#define RECEIVE_TIMEOUT             2000.0 // change the value for required timeout period
-//#define RSSI_THRESHOLD              -120  // Default RSSI at reception, more than noise floor
-////#define CSMA_RSSI_THRESHOLD         -90   // Higher RSSI to Transmit. If it's lower, the Channel will be seen as busy.
-//
-/////*  Packet configuration parameters  */
-//#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_16BYTES
-//#define SYNC_LENGTH                 PKT_SYNC_LENGTH_4BYTES
-//#define SYNC_WORD                   0x88888888
-//#define LENGTH_TYPE                 PKT_LENGTH_VAR
-//#define LENGTH_WIDTH                7
-//#define CRC_MODE                    PKT_CRC_MODE_8BITS
-//#define CONTROL_LENGTH              PKT_CONTROL_LENGTH_0BYTES
-//#define EN_ADDRESS                  S_ENABLE
-//#define EN_FEC                      S_DISABLE
-//#define EN_WHITENING                S_ENABLE
-//
-//#define EN_FILT_MY_ADDRESS          S_ENABLE
-//#define EN_FILT_MULTICAST_ADDRESS   S_ENABLE
-//#define EN_FILT_BROADCAST_ADDRESS   S_ENABLE
-//#define MY_ADDRESS                  0x44
-//#define MULTICAST_ADDRESS           0xEE
-//#define BROADCAST_ADDRESS           0xFF
-//
-//#define MAX_BUFFER_LEN              96
-//#define MAX_PAYLOAD_LEN             126 // (2^7 - 1) - 1 - 0 = 126 (LENGTH_WID=7, 1 address byte, & 0 control bytes)
-
-
-
-
-//#define PAYLOAD_LEN             80
-
-
-#define XTAL_FREQUENCY              50000000
-
-/*  Radio configuration parameters  */
-#define XTAL_OFFSET_PPM             0
-//#define INFINITE_TIMEOUT            0.0
-#define BASE_FREQUENCY              433.0e6
-#define CHANNEL_SPACE               100e3
-#define CHANNEL_NUMBER              0
-#define MODULATION_SELECT           FSK
-#define DATARATE                    38400
-#define FREQ_DEVIATION              20e3
-#define BANDWIDTH                   100E3
-
-#define POWER_INDEX                 7
-#define POWER_DBM                   11.6
-
-//#define RECEIVE_TIMEOUT             2000.0 // change the value for required timeout period
-#define RSSI_THRESHOLD              -120  // Default RSSI at reception, more than noise floor
-//#define CSMA_RSSI_THRESHOLD         -90   // Higher RSSI to Transmit. If it's lower, the Channel will be seen as busy.
-
-///*  Packet configuration parameters  */
-#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_16BYTES
-#define SYNC_LENGTH                 PKT_SYNC_LENGTH_4BYTES
-#define SYNC_WORD                   0x88888888
-#define LENGTH_TYPE                 PKT_LENGTH_VAR
-#define LENGTH_WIDTH                7
-#define CRC_MODE                    PKT_CRC_MODE_8BITS
-#define CONTROL_LENGTH              PKT_CONTROL_LENGTH_0BYTES
-#define EN_ADDRESS                  S_ENABLE
-#define EN_FEC                      S_DISABLE
-#define EN_WHITENING                S_ENABLE
-
-#define EN_FILT_MY_ADDRESS          S_ENABLE
-#define EN_FILT_MULTICAST_ADDRESS   S_ENABLE
-#define EN_FILT_BROADCAST_ADDRESS   S_ENABLE
-#define MY_ADDRESS                  0x44
-#define MULTICAST_ADDRESS           0xEE
-#define BROADCAST_ADDRESS           0xFF
-
-#define MAX_BUFFER_LEN              96
-#define MAX_PAYLOAD_LEN             126 // (2^7 - 1) - 1 - 0 = 126 (LENGTH_WID=7, 1 address byte, & 0 control bytes)
-
-#define PAYLOAD_LEN             80
 
 /* USER CODE END PD */
 
@@ -157,16 +69,6 @@ char dbgbuffer[40] = "EMPTY";
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
-//Spirit1 function prototypes
-
-
-void SPSGRF_StartTx(uint8_t *txBuff, uint8_t txLen);
-void SPSGRF_StartRx(void);
-  uint8_t SPSGRF_GetRxData(uint8_t *rxBuff);
-volatile bool checkForLastBit(uint8_t temp, uint8_t temp_last);
-volatile bool checkForFirstBit(uint8_t temp, uint8_t temp_last);
-
-
 //Camera function prototypes
 int wrSensorRegs16_8(const struct sensor_reg reglist[]);
 void initCam();
@@ -177,6 +79,12 @@ uint8_t get_bit(uint8_t addr, uint8_t bit);
 
 void turnCameraOff();
 void turnCameraOn();
+
+void takePicture();
+
+void reciveAndSavePicture(FIL* fp);
+void turnOnFilter();
+void turnOffFilter();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -209,25 +117,16 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	//Variables
+	uint8_t buffer[80];   /* File copy buffer */
 
-	uint8_t buffer_TX[PAYLOAD_LEN] = {0x00};
-	uint8_t buffer_RX[PAYLOAD_LEN] = {0x02};
-	char payload[20] = "Hello World!\r\n";
-	uint8_t state = 0;
-
-	uint8_t temp, lastBitFound = 0;
-	uint32_t count = 0, var = 0;
 	uint8_t spi_recv_buf = 0;
 	uint8_t spi_buf;
-	uint8_t tempData, tempData_last;
 
 	uint8_t vid, pid;
 
     RTC_DateTypeDef gDate;
     RTC_TimeTypeDef gTime;
-    char time[27];
-	//char temp_sd_data[1];
-	unsigned char buffer_SD [255];
+    char time[55];
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -254,6 +153,7 @@ int main(void)
   MX_SPI3_Init();
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
+	turnCameraOff();
   //init fatfs
   if (MX_FATFS_Init() != APP_OK) {
       Error_Handler();
@@ -268,329 +168,229 @@ int main(void)
   	  strcpy(dbgbuffer, "SDCARD MOUNTED!");
     }
 
-   /* Get the RTC current Time */
-//    HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
-//   /* Get the RTC current Date */
-//    HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
-//   /* Display time Format: hh:mm:ss-dd-mm-yy */
-//    sprintf(time,"PIC-%02d-%02d-%02d-%02d-%02d-%2d.txt",gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date, gDate.Month, (2000 + gDate.Year));
-//    //sprintf(time,"PIC101.txt");
-//    //sprintf(time,"STM34.txt");
-//
-//	fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
-//
-//	if (fresult != FR_OK) {
-//		strcpy(dbgbuffer, "ERROR CREATING FILE!");
-//	} else {
-//		strcpy(dbgbuffer, "FILE CREATED!");
-//	}
-//
-//
-//
-//	fresult = f_puts("test1234", &testFile);
-//	if (fresult != FR_OK) {
-//			strcpy(dbgbuffer, "ERROR WRITING IN FILE!");
-//		} else {
-//			strcpy(dbgbuffer, "DATA WRITEN");
-//		}
-//	f_close(&testFile);
-
-//	fresult = f_mount(NULL, "/", 1);
-//	if (fresult == FR_OK) {
-//		strcpy(dbgbuffer, "SDCARD UNMOUNTED!");
-//	} else {
-//		strcpy(dbgbuffer, "ERROR UNMOUNTING SDCARD!");
-//	}
-
-
-	//camera init
-	turnCameraOff();
-	HAL_Delay(100);
-	turnCameraOn();
-
-	HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN1_Pin, GPIO_PIN_SET);
-
-	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-	HAL_Delay(100);
-	//Check if SPI  communication with camera module is working
-	while (spi_recv_buf != 0x55) {
-		spi_buf = 0x00 | 0x80;
-		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
-		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-		spi_buf = 0x55;
-		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-
-		spi_buf = 0x00;
-		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
-		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-
-		spi_buf = 0x55;
-
-		temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-
-		if (spi_recv_buf != 0x55) {
-			HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
-			HAL_Delay(1000);
-		} else {
-			HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin); //Tooge diode when Camera  responds correctly
-			HAL_Delay(1000);
-
-		}
+	fresult = f_mkdir("RedzamaGaisma");
+	if (fresult != FR_OK) {
+		strcpy(dbgbuffer, "ERROR CREATING DIRECTORY!");
+	} else {
+		strcpy(dbgbuffer, "DIRECTORY CREATED!");
 	}
-	//Check if the camera module type is OV5642
-	wrSensorReg16_8(0xff, 0x01);
-	rdSensorReg16_8(OV5642_CHIPID_HIGH, &vid);
-	rdSensorReg16_8(OV5642_CHIPID_LOW, &pid);
-	//Check if camera module responds
-	if ((vid != 0x56) || (pid != 0x42)) {
-		//Serial.println("Can't find OV5642 module!");
-		while (1);
+	fresult = f_mkdir("IRGaisma");
+	if (fresult != FR_OK) {
+		strcpy(dbgbuffer, "ERROR CREATING DIRECTORY!");
+	} else {
+		strcpy(dbgbuffer, "DIRECTORY CREATED!");
+	}
+	fresult = f_mkdir("SutitieAtteli");
+	if (fresult != FR_OK) {
+		strcpy(dbgbuffer, "ERROR CREATING DIRECTORY!");
+	} else {
+		strcpy(dbgbuffer, "DIRECTORY CREATED!");
 	}
 
-	// init cam
-	initCam();
-
-	// Write ARDUCHIP_TIM, VSYNC_LEVEL_MASK to spi
-	write_reg(ARDUCHIP_TIM, VSYNC_LEVEL_MASK);
-
-	//Change picture size
-
-	wrSensorRegs16_8(ov5642_2592x1944);
-
-	// Close auto exposure mode
-	//uint8_t _x3503;
-	//wrSensorReg16_8(0x5001,_x3503|0x01);
-	//Manually set the exposure value
-	wrSensorReg16_8(0x3500, 0x00);
-	wrSensorReg16_8(0x3501, 0x79);
-	wrSensorReg16_8(0x3502, 0xe0);
+	fresult = f_mkdir("Temp");
+	if (fresult != FR_OK) {
+		strcpy(dbgbuffer, "ERROR CREATING DIRECTORY!");
+	} else {
+		strcpy(dbgbuffer, "DIRECTORY CREATED!");
+	}
 
 
 
-	/*
- 	 *
- 	 *
- 	 *
- 	 * Spirit 1 init
- 	 *
- 	 *
- 	 *
- 	 */
 
- 	SpiritEnterShutdown();
- 	SpiritExitShutdown();
- 	SpiritManagementWaExtraCurrent();
-
- 	do {
- 		for (volatile uint8_t i = 0; i != 0xFF; i++)
- 			; // delay for state transition
- 		SpiritRefreshStatus(); // reads the MC_STATUS register
- 	} while (g_xStatus.MC_STATE != MC_STATE_READY);
-
- 	SRadioInit xRadioInit;
-
- 	// Initialize radio RF parameters
- 	xRadioInit.nXtalOffsetPpm = XTAL_OFFSET_PPM;
- 	xRadioInit.lFrequencyBase = BASE_FREQUENCY;
- 	xRadioInit.nChannelSpace = CHANNEL_SPACE;
- 	xRadioInit.cChannelNumber = CHANNEL_NUMBER;
- 	xRadioInit.xModulationSelect = MODULATION_SELECT;
- 	xRadioInit.lDatarate = DATARATE;
- 	xRadioInit.lFreqDev = FREQ_DEVIATION;
- 	xRadioInit.lBandwidth = BANDWIDTH;
- 	SpiritRadioSetXtalFrequency(XTAL_FREQUENCY); // Must be called before SpiritRadioInit()
- 	SpiritRadioInit(&xRadioInit);
-
- 	// Set the transmitter power level
- 	SpiritRadioSetPALeveldBm(POWER_INDEX, POWER_DBM);
- 	SpiritRadioSetPALevelMaxIndex(POWER_INDEX);
-
- 	PktBasicInit xBasicInit;
- 	PktBasicAddressesInit xBasicAddress;
-
- 	// Configure packet handler to use the Basic packet format
- 	xBasicInit.xPreambleLength = PREAMBLE_LENGTH;
- 	xBasicInit.xSyncLength = SYNC_LENGTH;
- 	xBasicInit.lSyncWords = SYNC_WORD;
- 	xBasicInit.xFixVarLength = LENGTH_TYPE;
- 	xBasicInit.cPktLengthWidth = LENGTH_WIDTH;
- 	xBasicInit.xCrcMode = CRC_MODE;
- 	xBasicInit.xControlLength = CONTROL_LENGTH;
- 	xBasicInit.xAddressField = EN_ADDRESS;
- 	xBasicInit.xFec = EN_FEC;
- 	xBasicInit.xDataWhitening = EN_WHITENING;
- 	SpiritPktBasicInit(&xBasicInit);
-
- 	// Configure destination address criteria for automatic packet filtering
- 	xBasicAddress.xFilterOnMyAddress = EN_FILT_MY_ADDRESS;
- 	xBasicAddress.cMyAddress = MY_ADDRESS;
- 	xBasicAddress.xFilterOnMulticastAddress = EN_FILT_MULTICAST_ADDRESS;
- 	xBasicAddress.cMulticastAddress = MULTICAST_ADDRESS;
- 	xBasicAddress.xFilterOnBroadcastAddress = EN_FILT_BROADCAST_ADDRESS;
- 	xBasicAddress.cBroadcastAddress = BROADCAST_ADDRESS;
- 	SpiritPktBasicAddressesInit(&xBasicAddress);
-
- 	SGpioInit xGpioInit;
-
- 	// Configure GPIO3 as interrupt request pin (active low)
- 	xGpioInit.xSpiritGpioPin = SPIRIT_GPIO_3;
- 	xGpioInit.xSpiritGpioMode = SPIRIT_GPIO_MODE_DIGITAL_OUTPUT_LP;
- 	xGpioInit.xSpiritGpioIO = SPIRIT_GPIO_DIG_OUT_IRQ;
- 	SpiritGpioInit(&xGpioInit);
-
- 	// Generate an interrupt request for the following IRQs
- 	SpiritIrqDeInit(NULL);
- 	SpiritIrq(TX_DATA_SENT, S_ENABLE);
- 	SpiritIrq(RX_DATA_READY, S_ENABLE);
- 	SpiritIrq(RX_DATA_DISC, S_ENABLE);
- 	SpiritIrq(RX_TIMEOUT, S_ENABLE);
- 	SpiritIrqClearStatus();
-
- 	// Enable the synchronization quality indicator check (perfect match required)
- 	// NOTE: 9.10.4: "It is recommended to always enable the SQI check."
- 	SpiritQiSetSqiThreshold(SQI_TH_0);
- 	SpiritQiSqiCheck(S_ENABLE);
-
- 	// Set the RSSI Threshold for Carrier Sense (9.10.2)
- 	// NOTE: CS_MODE = 0 at reset
- 	SpiritQiSetRssiThresholddBm(RSSI_THRESHOLD);
-
- 	// Configure the RX timeout
-	#ifdef RECEIVE_TIMEOUT
-		 SpiritTimerSetRxTimeoutMs(2000.0);
-	#else
-		 SET_INFINITE_RX_TIMEOUT();
-	#endif /* RECIEVE_TIMEOUT */
- 	SpiritTimerSetRxTimeoutStopCondition(SQI_ABOVE_THRESHOLD);
-
- 	SpiritPktBasicSetDestinationAddress(0x44);
+	Spirit1_init();
 
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
+	while (1) {
+		/* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
-/*
- * Nolasa bildi
- * Saglab�? SD kartē
- * Nolasa bildi citr�? spektr�?
- * Saglab�? sd kartē
- * Samazina rezolūciju
- * Nolasa bildi
- * Saglab�? SD kartē
- * Izslēdz kameru
- * Nosūta uz zemi
- *
- *
- */
+		/* USER CODE BEGIN 3 */
+		/*
+		 * Init camera module after turn off
+		 */
+		turnCameraOn();
+		HAL_Delay(50);
+		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+		HAL_Delay(20);
+		//Check if SPI  communication with camera module is working
+		while (spi_recv_buf != 0x55) {
+			spi_buf = 0x00 | 0x80;
+			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+			spi_buf = 0x55;
+			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 
-	   /* Get the RTC current Time */
-	    HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
-	   /* Get the RTC current Date */
-	    HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
-	   /* Display time Format: hh:mm:ss-dd-mm-yy */
-	    sprintf(time,"PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date, gDate.Month, (2000 + gDate.Year));
-	    //sprintf(time,"PIC101.txt");
-	    //sprintf(time,"STM34.txt");
+			spi_buf = 0x00;
+			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
 
+			spi_buf = 0x55;
+
+			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+
+			if (spi_recv_buf != 0x55) {
+				HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
+				HAL_Delay(1000);
+			} else {
+				HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin); //Tooge diode when Camera  responds correctly
+				HAL_Delay(1000);
+
+			}
+		}
+
+		//Check if the camera module type is OV5642
+		wrSensorReg16_8(0xff, 0x01);
+		rdSensorReg16_8(OV5642_CHIPID_HIGH, &vid);
+		rdSensorReg16_8(OV5642_CHIPID_LOW, &pid);
+		//Check if camera module responds
+		if ((vid != 0x56) || (pid != 0x42)) {
+			HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
+			while (1);
+		}
+
+		// init cam
+		initCam();
+
+		// Write ARDUCHIP_TIM, VSYNC_LEVEL_MASK to spi
+		write_reg(ARDUCHIP_TIM, VSYNC_LEVEL_MASK);
+
+		//Change picture size
+
+		// Close auto exposure mode
+		//uint8_t _x3503;
+		//wrSensorReg16_8(0x5001,_x3503|0x01);
+		//Manually set the exposure value
+		wrSensorReg16_8(0x3500, 0x00);
+		wrSensorReg16_8(0x3501, 0x79);
+		wrSensorReg16_8(0x3502, 0xe0);
+
+		/*
+		 * Start picture taking and saving into sd card
+		 */
+
+		wrSensorRegs16_8(ov5642_320x240);
+		sprintf(time, "Temp/temp.JPEG");
+
+		//Create an file
 		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
+		if (fresult != FR_OK) {
+			strcpy(dbgbuffer, "ERROR CREATING FILE!");
+		} else {
+			strcpy(dbgbuffer, "FILE CREATED!");
+		}
+		// set all camera registers to take a picture
+		takePicture();
+		//Wait for capture to be done
+		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+		wrSensorRegs16_8(ov5642_2592x1944);
+		//Recive picture save it into sd card
+		reciveAndSavePicture(&testFile);
+		f_close(&testFile);
 
+		/* Get the RTC current Time */
+		HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
+		/* Get the RTC current Date */
+		HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+		//Create file for next picture
+		sprintf(time, "RedzamaGaisma/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
+				gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
+				gDate.Month, (2000 + gDate.Year));
+
+		//Create an file
+		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
 		if (fresult != FR_OK) {
 			strcpy(dbgbuffer, "ERROR CREATING FILE!");
 		} else {
 			strcpy(dbgbuffer, "FILE CREATED!");
 		}
 
+		// set all camera registers to take a picture
+		takePicture();
+		//Wait for capture to be done
+		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+		//Chose picture size
+		//Recive picture save it into sd card
+		reciveAndSavePicture(&testFile);
+		f_close(&testFile);
+		turnOnFilter();
+		HAL_Delay(100);
 
-
-
-
-
-	  //Take picture
-	  //Clear fifo flag
-	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
-
-	  // Start capture
-	  write_reg(ARDUCHIP_FIFO, FIFO_RDPTR_RST_MASK);
-
-	  ///Flush FIFO buffer
-	  write_reg(ARDUCHIP_FIFO, FIFO_WRPTR_RST_MASK);
-
-	  //Clear fifo flag
-	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
-
-	  // Start capture
-	  write_reg(ARDUCHIP_FIFO, FIFO_START_MASK);
-
-	  //Wait for capture to be done
-	  while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0)
-		  ;
-
-		while (1) {
-			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
-
-			spi_buf = BURST_FIFO_READ;
-			temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1,
-					100);
-
-			temp = HAL_SPI_TransmitReceive(&hspi3, buffer_TX, buffer_RX,
-			PAYLOAD_LEN, 200);
-			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-			count = count +1;
-
-			/*xTxDoneFlag = S_RESET;
-			SPSGRF_StartTx(buffer_RX, sizeof(buffer_RX));
-
-			while (!xTxDoneFlag);*/
-
-			for (var = 0; var < PAYLOAD_LEN; ++var) {
-				//sprintf(temp_sd_data,"%b",buffer_RX[var]);
-				//sprintf(buffer_SD,"%c",(unsigned char)buffer_RX[var]);
-				fresult = f_putc((unsigned char)buffer_RX[var], &testFile);
-				if (fresult != FR_OK) {
-					strcpy(dbgbuffer, "ERROR WRITING IN FILE!");
-				} else {
-					strcpy(dbgbuffer, "DATA WRITEN");
-				}
-				if (!checkForLastBit(buffer_RX[var], tempData_last)) {
-					lastBitFound = 1;
-					HAL_GPIO_TogglePin(DIODE4_GPIO_Port, DIODE4_Pin); //Toogle if last bit is found
-					break;
-				}
-				if (!checkForFirstBit(buffer_RX[var], tempData_last)) {
-					HAL_GPIO_TogglePin(DIODE3_GPIO_Port, DIODE3_Pin); //Toogle if first bit is found
-				}
-				tempData_last = buffer_RX[var];
-			}
-			if (lastBitFound == 1) {
-				lastBitFound = 0;
-				sprintf(buffer_SD,"%c",(unsigned char)32);
-				fresult = f_putc(*buffer_SD, &testFile);
-				fresult = f_putc(*buffer_SD, &testFile);
-				if(var > 77)
-				{
-					SPSGRF_StartTx(buffer_TX, sizeof(buffer_TX));
-				}
-				break;
-			}
+		/* Get the RTC current Time */
+		HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
+		/* Get the RTC current Date */
+		HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+		//Create file for next picture
+		sprintf(time, "IRGaisma/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
+				gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
+				gDate.Month, (2000 + gDate.Year));
+		//Create an file
+		fresult = f_open(&testFile, time,
+				FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
+		if (fresult != FR_OK) {
+			strcpy(dbgbuffer, "ERROR CREATING FILE!");
+		} else {
+			strcpy(dbgbuffer, "FILE CREATED!");
 		}
-		count = count * PAYLOAD_LEN;
-		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-		memset(buffer_RX, '\0', sizeof(buffer_RX));
+
+		// set all kamera registers to take a picture
+		takePicture();
+		//Wait for capture to be done
+		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+		//Recive picture save it into sd card
+		wrSensorRegs16_8(ov5642_320x240);
+		reciveAndSavePicture(&testFile);
+		f_close(&testFile);
+		turnOffFilter();
+		/* Get the RTC current Time */
+		HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
+		/* Get the RTC current Date */
+		HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+		/* Display time Format: hh:mm:ss-dd-mm-yy */
+		sprintf(time, "SutitieAtteli/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
+				gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
+				gDate.Month, (2000 + gDate.Year));
+		//Create an file
+		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
+		if (fresult != FR_OK) {
+			strcpy(dbgbuffer, "ERROR CREATING FILE!");
+		} else {
+			strcpy(dbgbuffer, "FILE CREATED!");
+		}
+		// set all camera registers to take a picture
+		takePicture();
+		//Wait for capture to be done
+		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+		wrSensorRegs16_8(ov5642_2592x1944);
+
+		//Recive picture save it into sd card, and send it to ground base station
+		reciveAndSavePicture(&testFile);
+		f_close(&testFile);
+
+		turnCameraOff();
+
+		fresult = f_open(&testFile, time, FA_READ);
+
+		for (;;) {
+			fresult = f_read(&testFile, buffer, sizeof(buffer), &br);
+			if (br == 0)
+				break; /* error or eof */
+
+			xTxDoneFlag = S_RESET;
+			SPSGRF_StartTx(buffer, sizeof(buffer));
+
+			while (!xTxDoneFlag);
+		}
 
 		f_close(&testFile);
- 	  HAL_Delay(10000);
-	  count = 0;
-  }
+
+		HAL_Delay(10000);
+
+	}
   /* USER CODE END 3 */
 }
 
@@ -652,37 +452,6 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
-//Spirit1 functions
-
-void SPSGRF_StartTx(uint8_t *txBuff, uint8_t txLen) {
-	// flush the TX FIFO
-	SpiritCmdStrobeFlushTxFifo();
-
-	// Avoid TX FIFO overflow
-	//txLen = (txLen > MAX_BUFFER_LEN ? txLen : MAX_BUFFER_LEN);
-	txLen = (txLen > MAX_BUFFER_LEN ? MAX_BUFFER_LEN : txLen);
-
-	// start TX operation
-	SpiritSpiWriteLinearFifo(txLen, txBuff);
-	SpiritPktBasicSetPayloadLength(txLen);
-	SpiritCmdStrobeTx();
-}
-
-void SPSGRF_StartRx(void)
-{
-  SpiritCmdStrobeRx();
-}
-
-uint8_t SPSGRF_GetRxData(uint8_t *rxBuff)
-{
-  uint8_t len;
-
-  len = SpiritLinearFifoReadNumElementsRxFifo();
-  SpiritSpiReadLinearFifo(len, rxBuff);
-
-  return len;
-}
-
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin) {
 	SpiritIrqs xIrqStatus;
 
@@ -702,28 +471,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin) {
 	}
 }
 
-bool checkForLastBit(uint8_t temp, uint8_t temp_last) {
-	if (temp != 0xD9) {
-		return true;
-	}
-	if (temp_last != 0xFF) {
-		return true;
-	}
-	return false;
-}
-
-bool checkForFirstBit(uint8_t temp, uint8_t temp_last) {
-	if (temp != 0xD8) {
-		return true;
-	}
-	if (temp_last != 0xFF) {
-		return true;
-	}
-	return false;
-}
-
 //Camera functions
-
 void initCam() {
 
 	wrSensorReg16_8(0x3008, 0x80);
@@ -769,53 +517,48 @@ uint8_t rdSensorReg16_8(uint16_t regID, uint8_t *regDat) {
 	I2C_buf_register[0] = regID >> 8;
 	I2C_buf_register[1] = regID & 0x00FF;
 	HAL_I2C_Master_Transmit(&hi2c1, 0x78, I2C_buf_register, 2, HAL_MAX_DELAY);
-
 	HAL_I2C_Master_Receive(&hi2c1, 0x79, regDat, 1, HAL_MAX_DELAY);
-
 	HAL_Delay(1);
 
 	return 1;
 }
 
 uint8_t wrSensorReg16_8(int regID, int regDat) {
-	uint8_t ret = 0;
 	uint8_t I2C_buf_register[3];
 
 	I2C_buf_register[0] = regID >> 8;
 	I2C_buf_register[1] = regID & 0x00FF;
 	I2C_buf_register[2] = regDat & 0x00FF;
-	ret = HAL_I2C_Master_Transmit(&hi2c1, 0x78, I2C_buf_register, 3,
+	HAL_I2C_Master_Transmit(&hi2c1, 0x78, I2C_buf_register, 3,
 			HAL_MAX_DELAY);
 
 	return 1;
 }
 
 void write_reg(int address, int value) {
-	uint8_t temp = 0;
 	uint8_t spi_recv_buf = 0;
 	uint8_t spi_buf;
 
 	spi_buf = address | 0x80;
 	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
-	temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+	HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
 
 	spi_buf = value;
-	temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+	HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
 	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 
 }
 
 uint8_t read_reg(int address) {
-	uint8_t temp = 0;
 	uint8_t spi_recv_buf = 0;
 	uint8_t spi_buf;
 
 	spi_buf = address;
 	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
-	temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+	HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
 
 	spi_buf = 0x00;
-	temp = HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+	HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
 	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 	return spi_recv_buf;
 
@@ -828,15 +571,102 @@ uint8_t get_bit(uint8_t addr, uint8_t bit) {
 	return temp;
 }
 
-
 void turnCameraOff()
 {
 	HAL_GPIO_WritePin(Mosfet_controll_GPIO_Port, Mosfet_controll_Pin, 1);
 
 }
+
 void turnCameraOn()
 {
 	HAL_GPIO_WritePin(Mosfet_controll_GPIO_Port, Mosfet_controll_Pin, 0);
+}
+
+void takePicture()
+{
+	  //Take picture
+	  //Clear fifo flag
+	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
+	  //reset fifo read flag
+	  write_reg(ARDUCHIP_FIFO, FIFO_RDPTR_RST_MASK);
+	  ///Flush FIFO buffer
+	  write_reg(ARDUCHIP_FIFO, FIFO_WRPTR_RST_MASK);
+	  //Clear fifo flag
+	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
+	  HAL_Delay(100);
+	  // take 1 picture
+	  write_reg(0x01, 0);
+	  // Start capture
+	  write_reg(ARDUCHIP_FIFO, FIFO_START_MASK);
+}
+
+
+void reciveAndSavePicture(FIL* fp)
+{
+	uint8_t buffer_TX[PAYLOAD_LEN] = {0x00};
+	uint8_t buffer_RX[PAYLOAD_LEN] = {0x02};
+
+	uint8_t lastBitFound = 0;
+	uint32_t count = 0, var = 0;
+	uint8_t tempData_last;
+	while (1) {
+		readSPIbuff(buffer_TX, buffer_RX, PAYLOAD_LEN);
+		count = count +1;
+
+
+		for (var = 0; var < PAYLOAD_LEN; ++var) {
+			fresult = f_putc((unsigned char)buffer_RX[var], fp);
+			if (!checkForLastBit(buffer_RX[var], tempData_last)) {
+				lastBitFound = 1;
+				HAL_GPIO_TogglePin(DIODE4_GPIO_Port, DIODE4_Pin); //Toogle if last bit is found
+				break;
+			}
+			if (!checkForFirstBit(buffer_RX[var], tempData_last)) {
+				HAL_GPIO_TogglePin(DIODE3_GPIO_Port, DIODE3_Pin); //Toogle if first bit is found
+			}
+			tempData_last = buffer_RX[var];
+		}
+		if (lastBitFound == 1) {
+			lastBitFound = 0;
+			if(var > 77)
+			{
+				SPSGRF_StartTx(buffer_TX, sizeof(buffer_TX));
+			}
+			break;
+		}
+	}
+
+	count = count * PAYLOAD_LEN;
+	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+
+}
+
+void turnOnFilter()
+{
+	HAL_GPIO_WritePin(H_BRIDGE_nSLEEP_GPIO_Port, H_BRIDGE_nSLEEP_Pin, GPIO_PIN_SET);
+	HAL_Delay(10);
+	HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN1_Pin, GPIO_PIN_SET);
+	HAL_Delay(200);
+	HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN1_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(H_BRIDGE_nSLEEP_GPIO_Port, H_BRIDGE_nSLEEP_Pin, GPIO_PIN_RESET);
+}
+
+void turnOffFilter()
+{
+	HAL_GPIO_WritePin(H_BRIDGE_nSLEEP_GPIO_Port, H_BRIDGE_nSLEEP_Pin, GPIO_PIN_SET);
+	HAL_Delay(10);
+	HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN2_Pin, GPIO_PIN_SET);
+	HAL_Delay(200);
+	HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN2_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(H_BRIDGE_nSLEEP_GPIO_Port, H_BRIDGE_nSLEEP_Pin, GPIO_PIN_RESET);
 }
 
 /* USER CODE END 4 */
