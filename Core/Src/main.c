@@ -284,6 +284,7 @@ int main(void)
 			strcpy(dbgbuffer, "FILE CREATED!");
 		}
 		// set all camera registers to take a picture
+
 		takePicture();
 		//Wait for capture to be done
 		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
@@ -316,6 +317,7 @@ int main(void)
 		//Chose picture size
 		//Recive picture save it into sd card
 		reciveAndSavePicture(&testFile);
+	//	reciveAndSavePicture(&testFile);
 		f_close(&testFile);
 		turnOnFilter();
 		HAL_Delay(100);
@@ -339,6 +341,7 @@ int main(void)
 
 		// set all kamera registers to take a picture
 		takePicture();
+	//	turnOffFilter();
 		//Wait for capture to be done
 		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
 		//Recive picture save it into sd card
@@ -595,7 +598,7 @@ void takePicture()
 	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
 	  HAL_Delay(100);
 	  // take 1 picture
-	  write_reg(0x01, 0);
+	  write_reg(0x01, 1);
 	  // Start capture
 	  write_reg(ARDUCHIP_FIFO, FIFO_START_MASK);
 }
