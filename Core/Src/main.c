@@ -62,7 +62,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-char dbgbuffer[40] = "EMPTY";
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -70,10 +69,10 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
 //Camera function prototypes
-int wrSensorRegs16_8(const struct sensor_reg reglist[]);
+int writeSensorRegs16_8(const struct sensor_reg reglist[]);
 void initCam();
-uint8_t wrSensorReg16_8(int regID, int regDat);
-uint8_t rdSensorReg16_8(uint16_t regID, uint8_t* regDat);
+uint8_t writeSensorReg16_8(int regID, int regDat);
+uint8_t readSensorReg16_8(uint16_t regID, uint8_t* regDat);
 void write_reg(int address,int value);
 uint8_t get_bit(uint8_t addr, uint8_t bit);
 
@@ -85,6 +84,7 @@ void takePicture();
 void reciveAndSavePicture(FIL* fp);
 void turnOnFilter();
 void turnOffFilter();
+void getTimeAndDate(RTC_TimeTypeDef *sTime, RTC_DateTypeDef *sDate);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -103,9 +103,6 @@ UINT br, bw;  // File read/write count
 FATFS *pfs;
 DWORD fre_clust;
 uint32_t total, free_space;
-
-char textBuffer[40];
-char buffer [255];
 
 /* USER CODE END 0 */
 
@@ -159,43 +156,15 @@ int main(void)
       Error_Handler();
    }
   set_time();
-  // MOUNT SD CARD
 
+  	// MOUNT SD CARD
   	fresult = f_mount(&fs, "/", 1);
-    if (fresult != FR_OK) {
-  	  strcpy(dbgbuffer, "ERROR MOUNTING SDCARD!");
-    } else {
-  	  strcpy(dbgbuffer, "SDCARD MOUNTED!");
-    }
 
+  //Create directorys for picture storage
 	fresult = f_mkdir("RedzamaGaisma");
-	if (fresult != FR_OK) {
-		strcpy(dbgbuffer, "ERROR CREATING DIRECTORY!");
-	} else {
-		strcpy(dbgbuffer, "DIRECTORY CREATED!");
-	}
 	fresult = f_mkdir("IRGaisma");
-	if (fresult != FR_OK) {
-		strcpy(dbgbuffer, "ERROR CREATING DIRECTORY!");
-	} else {
-		strcpy(dbgbuffer, "DIRECTORY CREATED!");
-	}
 	fresult = f_mkdir("SutitieAtteli");
-	if (fresult != FR_OK) {
-		strcpy(dbgbuffer, "ERROR CREATING DIRECTORY!");
-	} else {
-		strcpy(dbgbuffer, "DIRECTORY CREATED!");
-	}
-
 	fresult = f_mkdir("Temp");
-	if (fresult != FR_OK) {
-		strcpy(dbgbuffer, "ERROR CREATING DIRECTORY!");
-	} else {
-		strcpy(dbgbuffer, "DIRECTORY CREATED!");
-	}
-
-
-
 
 	Spirit1_init();
 
@@ -204,7 +173,8 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	while (1) {
+	while (1)
+	{
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
@@ -216,7 +186,8 @@ int main(void)
 		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 		HAL_Delay(20);
 		//Check if SPI  communication with camera module is working
-		while (spi_recv_buf != 0x55) {
+		while (spi_recv_buf != 0x55)
+		{
 			spi_buf = 0x00 | 0x80;
 			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
 			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
@@ -227,76 +198,64 @@ int main(void)
 			spi_buf = 0x00;
 			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
 			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-
 			spi_buf = 0x55;
-
 			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
 			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
 
-			if (spi_recv_buf != 0x55) {
-				HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
+			if (spi_recv_buf != 0x55)
+			{
+				//Camera hasnt responded, or we dont recive correct data
+				HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin);
 				HAL_Delay(1000);
 			} else {
-				HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin); //Tooge diode when Camera  responds correctly
+				//Camera  responded correctly
+				HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin);
 				HAL_Delay(1000);
 
 			}
 		}
 
 		//Check if the camera module type is OV5642
-		wrSensorReg16_8(0xff, 0x01);
-		rdSensorReg16_8(OV5642_CHIPID_HIGH, &vid);
-		rdSensorReg16_8(OV5642_CHIPID_LOW, &pid);
+		writeSensorReg16_8(0xff, 0x01);
+		readSensorReg16_8(OV5642_CHIPID_HIGH, &vid);
+		readSensorReg16_8(OV5642_CHIPID_LOW, &pid);
 		//Check if camera module responds
-		if ((vid != 0x56) || (pid != 0x42)) {
-			HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
+		if ((vid != 0x56) || (pid != 0x42))
+		{
+			//Camera hasnt responded, or we dont recive correct data
+			HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin);
 			while (1);
 		}
 
-		// init cam
 		initCam();
 
 		// Write ARDUCHIP_TIM, VSYNC_LEVEL_MASK to spi
 		write_reg(ARDUCHIP_TIM, VSYNC_LEVEL_MASK);
 
-		//Change picture size
-
-		// Close auto exposure mode
-		//uint8_t _x3503;
-		//wrSensorReg16_8(0x5001,_x3503|0x01);
 		//Manually set the exposure value
-		wrSensorReg16_8(0x3500, 0x00);
-		wrSensorReg16_8(0x3501, 0x79);
-		wrSensorReg16_8(0x3502, 0xe0);
+		writeSensorReg16_8(0x3500, 0x00);
+		writeSensorReg16_8(0x3501, 0x79);
+		writeSensorReg16_8(0x3502, 0xe0);
 
 		/*
 		 * Start picture taking and saving into sd card
 		 */
 
-		wrSensorRegs16_8(ov5642_320x240);
+		writeSensorRegs16_8(ov5642_320x240);
 		sprintf(time, "Temp/temp.JPEG");
 
 		//Create an file
 		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
-		if (fresult != FR_OK) {
-			strcpy(dbgbuffer, "ERROR CREATING FILE!");
-		} else {
-			strcpy(dbgbuffer, "FILE CREATED!");
-		}
-		// set all camera registers to take a picture
 
 		takePicture();
 		//Wait for capture to be done
 		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
-		wrSensorRegs16_8(ov5642_2592x1944);
+		writeSensorRegs16_8(ov5642_2592x1944);
 		//Recive picture save it into sd card
 		reciveAndSavePicture(&testFile);
 		f_close(&testFile);
 
-		/* Get the RTC current Time */
-		HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
-		/* Get the RTC current Date */
-		HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+		getTimeAndDate(&gTime, &gDate);
 		//Create file for next picture
 		sprintf(time, "RedzamaGaisma/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
 				gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
@@ -304,73 +263,52 @@ int main(void)
 
 		//Create an file
 		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
-		if (fresult != FR_OK) {
-			strcpy(dbgbuffer, "ERROR CREATING FILE!");
-		} else {
-			strcpy(dbgbuffer, "FILE CREATED!");
-		}
 
-		// set all camera registers to take a picture
 		takePicture();
 		//Wait for capture to be done
 		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
-		//Chose picture size
+
+		turnOnFilter();
+
 		//Recive picture save it into sd card
 		reciveAndSavePicture(&testFile);
-	//	reciveAndSavePicture(&testFile);
 		f_close(&testFile);
-		turnOnFilter();
-		HAL_Delay(100);
 
-		/* Get the RTC current Time */
-		HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
-		/* Get the RTC current Date */
-		HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+
+		getTimeAndDate(&gTime, &gDate);
 		//Create file for next picture
 		sprintf(time, "IRGaisma/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
 				gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
 				gDate.Month, (2000 + gDate.Year));
 		//Create an file
-		fresult = f_open(&testFile, time,
-				FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
-		if (fresult != FR_OK) {
-			strcpy(dbgbuffer, "ERROR CREATING FILE!");
-		} else {
-			strcpy(dbgbuffer, "FILE CREATED!");
-		}
+		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
 
-		// set all kamera registers to take a picture
 		takePicture();
-	//	turnOffFilter();
+
 		//Wait for capture to be done
 		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
-		//Recive picture save it into sd card
-		wrSensorRegs16_8(ov5642_320x240);
-		reciveAndSavePicture(&testFile);
-		f_close(&testFile);
+
 		turnOffFilter();
-		/* Get the RTC current Time */
-		HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
-		/* Get the RTC current Date */
-		HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+		//Recive picture save it into sd card
+		reciveAndSavePicture(&testFile);
+
+		writeSensorRegs16_8(ov5642_320x240);
+
+
+		getTimeAndDate(&gTime, &gDate);
+
 		/* Display time Format: hh:mm:ss-dd-mm-yy */
 		sprintf(time, "SutitieAtteli/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
 				gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
 				gDate.Month, (2000 + gDate.Year));
 		//Create an file
 		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
-		if (fresult != FR_OK) {
-			strcpy(dbgbuffer, "ERROR CREATING FILE!");
-		} else {
-			strcpy(dbgbuffer, "FILE CREATED!");
-		}
-		// set all camera registers to take a picture
+
 		takePicture();
+
 		//Wait for capture to be done
 		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
-		wrSensorRegs16_8(ov5642_2592x1944);
 
-		//Recive picture save it into sd card, and send it to ground base station
 		reciveAndSavePicture(&testFile);
 		f_close(&testFile);
 
@@ -378,7 +316,8 @@ int main(void)
 
 		fresult = f_open(&testFile, time, FA_READ);
 
-		for (;;) {
+		for (;;)
+		{
 			fresult = f_read(&testFile, buffer, sizeof(buffer), &br);
 			if (br == 0)
 				break; /* error or eof */
@@ -391,7 +330,7 @@ int main(void)
 
 		f_close(&testFile);
 
-		HAL_Delay(10000);
+		HAL_Delay(26000);
 
 	}
   /* USER CODE END 3 */
@@ -455,66 +394,91 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
-void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin) {
+void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
+{
 	SpiritIrqs xIrqStatus;
 
-	if (GPIO_Pin != SPIRIT1_GPIO3_Pin) {
+	if (GPIO_Pin != SPIRIT1_GPIO3_Pin)
+	{
 		return;
 	}
 
 	SpiritIrqGetStatus(&xIrqStatus);
-	if (xIrqStatus.IRQ_TX_DATA_SENT) {
+	if (xIrqStatus.IRQ_TX_DATA_SENT)
+	{
 		xTxDoneFlag = S_SET;
 	}
-	if (xIrqStatus.IRQ_RX_DATA_READY) {
+	if (xIrqStatus.IRQ_RX_DATA_READY)
+	{
 		xRxDoneFlag = S_SET;
 	}
-	if (xIrqStatus.IRQ_RX_DATA_DISC || xIrqStatus.IRQ_RX_TIMEOUT) {
+	if (xIrqStatus.IRQ_RX_DATA_DISC || xIrqStatus.IRQ_RX_TIMEOUT)
+	{
 		SpiritCmdStrobeRx();
 	}
 }
 
 //Camera functions
-void initCam() {
 
-	wrSensorReg16_8(0x3008, 0x80);
-	wrSensorRegs16_8(OV5642_QVGA_Preview);
+/**
+ * @brief Writes all the neccasery values to registers
+ * to set camera in capture mode, and for it
+ * to output jpeg images
+ *
+ *
+ */
+void initCam()
+{
+	writeSensorReg16_8(0x3008, 0x80);
+	writeSensorRegs16_8(OV5642_QVGA_Preview);
 
 	HAL_Delay(200);
 
-	wrSensorRegs16_8(OV5642_JPEG_Capture_QSXGA);
-	wrSensorRegs16_8(ov5642_320x240);
+	writeSensorRegs16_8(OV5642_JPEG_Capture_QSXGA);
+	writeSensorRegs16_8(ov5642_320x240);
+
 	HAL_Delay(100);
 
-	wrSensorReg16_8(0x3818, 0xa8);
-	wrSensorReg16_8(0x3621, 0x10);
-	wrSensorReg16_8(0x3801, 0xb0);
-	wrSensorReg16_8(0x4407, 0x08);
-	wrSensorReg16_8(0x5888, 0x00);
-	wrSensorReg16_8(0x5000, 0xFF);
+	writeSensorReg16_8(0x3818, 0xa8);
+	writeSensorReg16_8(0x3621, 0x10);
+	writeSensorReg16_8(0x3801, 0xb0);
+	writeSensorReg16_8(0x4407, 0x08);
+	writeSensorReg16_8(0x5888, 0x00);
+	writeSensorReg16_8(0x5000, 0xFF);
 }
 
-int wrSensorRegs16_8(const struct sensor_reg reglist[]) {
-
+/**
+ * @brief Write data to ov5642 sensor using I2C multiple register
+ *
+ * @param reglist structure whis has all the registers and value
+ * that have to be writen to the sensor
+ */
+int writeSensorRegs16_8(const struct sensor_reg reglist[])
+{
 	unsigned int reg_addr;
 	unsigned char reg_val;
 	const struct sensor_reg *next = reglist;
 
-	while ((reg_addr != 0xffff) | (reg_val != 0xff)) {
-
+	while ((reg_addr != 0xffff) | (reg_val != 0xff))
+	{
 		reg_addr = pgm_read_word(&next->reg);
 		reg_val = pgm_read_word(&next->val);
 
-		wrSensorReg16_8(reg_addr, reg_val);
+		writeSensorReg16_8(reg_addr, reg_val);
 
 		next++;
-
 	}
 	return 1;
 }
 
-uint8_t rdSensorReg16_8(uint16_t regID, uint8_t *regDat) {
-
+/**
+ * @brief Read data from ov5642 sensor using I2C single register
+ *
+ * @param regID register address
+ * @param regDat pointer to data
+ */
+uint8_t readSensorReg16_8(uint16_t regID, uint8_t *regDat)
+{
 	uint8_t I2C_buf_register[2];
 
 	I2C_buf_register[0] = regID >> 8;
@@ -526,19 +490,32 @@ uint8_t rdSensorReg16_8(uint16_t regID, uint8_t *regDat) {
 	return 1;
 }
 
-uint8_t wrSensorReg16_8(int regID, int regDat) {
+/**
+ * @brief Write data to ov5642 sensor using I2C single register
+ *
+ * @param regID register address
+ * @param regDat pointer to data
+ */
+uint8_t writeSensorReg16_8(int regID, int regDat)
+{
 	uint8_t I2C_buf_register[3];
 
 	I2C_buf_register[0] = regID >> 8;
 	I2C_buf_register[1] = regID & 0x00FF;
 	I2C_buf_register[2] = regDat & 0x00FF;
-	HAL_I2C_Master_Transmit(&hi2c1, 0x78, I2C_buf_register, 3,
-			HAL_MAX_DELAY);
+	HAL_I2C_Master_Transmit(&hi2c1, 0x78, I2C_buf_register, 3, HAL_MAX_DELAY);
 
 	return 1;
 }
 
-void write_reg(int address, int value) {
+/**
+ * @brief Write data to camera module register using SPI
+ *
+ * @param address register address
+ * @param value data to be writen in the register
+ */
+void write_reg(int address, int value)
+{
 	uint8_t spi_recv_buf = 0;
 	uint8_t spi_buf;
 
@@ -552,7 +529,16 @@ void write_reg(int address, int value) {
 
 }
 
-uint8_t read_reg(int address) {
+/**
+ * @brief Read data to camera module register using SPI
+ *
+ * @param address register address
+ *
+ * @retval Returns read data from register
+ *
+ */
+uint8_t read_reg(int address)
+{
 	uint8_t spi_recv_buf = 0;
 	uint8_t spi_buf;
 
@@ -567,70 +553,102 @@ uint8_t read_reg(int address) {
 
 }
 
-uint8_t get_bit(uint8_t addr, uint8_t bit) {
+/**
+ * @brief get a single bit from camera module register
+ *
+ * @param address register address
+ * @param bit bit you want to read
+ *
+ * @retval Returns bit read from register
+ */
+uint8_t get_bit(uint8_t addr, uint8_t bit)
+{
 	uint8_t temp;
 	temp = read_reg(addr & 0x7F);
 	temp = temp & bit;
 	return temp;
 }
 
+/**
+ * @brief Disconnects the power supply of the camera module
+ */
 void turnCameraOff()
 {
 	HAL_GPIO_WritePin(Mosfet_controll_GPIO_Port, Mosfet_controll_Pin, 1);
-
 }
 
+/**
+ * @brief Connect the power supply to the camera module
+ */
 void turnCameraOn()
 {
 	HAL_GPIO_WritePin(Mosfet_controll_GPIO_Port, Mosfet_controll_Pin, 0);
 }
 
+
+/**
+ * @brief Set all camera module registers, to take a single picture
+ */
 void takePicture()
 {
-	  //Take picture
 	  //Clear fifo flag
 	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
+
 	  //reset fifo read flag
 	  write_reg(ARDUCHIP_FIFO, FIFO_RDPTR_RST_MASK);
+
 	  ///Flush FIFO buffer
 	  write_reg(ARDUCHIP_FIFO, FIFO_WRPTR_RST_MASK);
+
 	  //Clear fifo flag
 	  write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
-	  HAL_Delay(100);
-	  // take 1 picture
+
+	  // Set the amount of pictures to be taken to 1
 	  write_reg(0x01, 1);
+
 	  // Start capture
 	  write_reg(ARDUCHIP_FIFO, FIFO_START_MASK);
 }
 
-
+/**
+ * @brief Function that recives a picture from camera module,
+ * and saves it in micro SD card, in the given path
+ *
+ * @param fp Pointer to fail object struct
+ */
 void reciveAndSavePicture(FIL* fp)
 {
 	uint8_t buffer_TX[PAYLOAD_LEN] = {0x00};
-	uint8_t buffer_RX[PAYLOAD_LEN] = {0x02};
+	uint8_t buffer_RX[PAYLOAD_LEN] = {0x00};
 
-	uint8_t lastBitFound = 0;
+	uint8_t lastByteFound = 0;
 	uint32_t count = 0, var = 0;
 	uint8_t tempData_last;
-	while (1) {
+
+	while (1)
+	{
 		readSPIbuff(buffer_TX, buffer_RX, PAYLOAD_LEN);
+
 		count = count +1;
 
-
-		for (var = 0; var < PAYLOAD_LEN; ++var) {
+		for (var = 0; var < PAYLOAD_LEN; ++var)
+		{
 			fresult = f_putc((unsigned char)buffer_RX[var], fp);
-			if (!checkForLastBit(buffer_RX[var], tempData_last)) {
-				lastBitFound = 1;
+			if (checkForLastByte(buffer_RX[var], tempData_last))
+			{
+				lastByteFound = 1;
 				HAL_GPIO_TogglePin(DIODE4_GPIO_Port, DIODE4_Pin); //Toogle if last bit is found
 				break;
 			}
-			if (!checkForFirstBit(buffer_RX[var], tempData_last)) {
+			if (checkForFirstByte(buffer_RX[var], tempData_last))
+			{
 				HAL_GPIO_TogglePin(DIODE3_GPIO_Port, DIODE3_Pin); //Toogle if first bit is found
 			}
 			tempData_last = buffer_RX[var];
 		}
-		if (lastBitFound == 1) {
-			lastBitFound = 0;
+		if (lastByteFound == 1)
+		{
+			lastByteFound = 0;
 			if(var > 77)
 			{
 				SPSGRF_StartTx(buffer_TX, sizeof(buffer_TX));
@@ -639,39 +657,66 @@ void reciveAndSavePicture(FIL* fp)
 		}
 	}
 
-	count = count * PAYLOAD_LEN;
 	HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+
+	// Show the amount of bytes sent to ground base station
+	count = count * PAYLOAD_LEN;
 
 }
 
+/**
+ * @brief Turn on IR filter, by changing H  bridge values
+ */
 void turnOnFilter()
 {
 	HAL_GPIO_WritePin(H_BRIDGE_nSLEEP_GPIO_Port, H_BRIDGE_nSLEEP_Pin, GPIO_PIN_SET);
+
 	HAL_Delay(10);
+
 	HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN1_Pin, GPIO_PIN_SET);
+
 	HAL_Delay(200);
+
 	HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN1_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(H_BRIDGE_nSLEEP_GPIO_Port, H_BRIDGE_nSLEEP_Pin, GPIO_PIN_RESET);
 }
 
+/**
+ * @brief Turn off IR filter, by changing H  bridge values
+ */
 void turnOffFilter()
 {
 	HAL_GPIO_WritePin(H_BRIDGE_nSLEEP_GPIO_Port, H_BRIDGE_nSLEEP_Pin, GPIO_PIN_SET);
+
 	HAL_Delay(10);
+
 	HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN2_Pin, GPIO_PIN_SET);
+
 	HAL_Delay(200);
+
 	HAL_GPIO_WritePin(H_BRIDGE_EN1_GPIO_Port, H_BRIDGE_EN1_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(H_BRIDGE_EN2_GPIO_Port, H_BRIDGE_EN2_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(H_BRIDGE_IN1_GPIO_Port, H_BRIDGE_IN2_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(H_BRIDGE_nSLEEP_GPIO_Port, H_BRIDGE_nSLEEP_Pin, GPIO_PIN_RESET);
 }
 
+/**
+ * @brief Turn off IR filter, by changing H  bridge values
+ *
+ * @param fp Pointer to time structure
+ * @param fp Pointer to date structure
+ */
+void getTimeAndDate(RTC_TimeTypeDef *sTime, RTC_DateTypeDef *sDate)
+{
+	HAL_RTC_GetTime(&hrtc, sTime, RTC_FORMAT_BIN);
+	HAL_RTC_GetDate(&hrtc, sDate, RTC_FORMAT_BIN);
+}
 /* USER CODE END 4 */
 
 /**

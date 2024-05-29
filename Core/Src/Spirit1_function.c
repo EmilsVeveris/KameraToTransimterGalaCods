@@ -1,5 +1,7 @@
 /*
- * function.c
+ * Spirit1_function.c
+ *
+ *Functions taken from https://forum.digikey.com/t/getting-started-with-the-spirit1-transceiver/15624
  *
  *  Created on: May 1, 2024
  *      Author: emils
@@ -10,7 +12,9 @@
 
 
 
-
+/**
+ * @brief Initcilize spirit1 radiotransciever using defined varaibles from Spirit1_function.h
+ */
 void Spirit1_init()
 {
 	/*
@@ -112,6 +116,12 @@ void Spirit1_init()
  	SpiritPktBasicSetDestinationAddress(0x44);
 }
 
+/**
+ * @brief Start data transmisson
+ *
+ * @param txBuff Pointer to buffer which will be transmited
+ * @param txLen Buffer length
+ */
 void SPSGRF_StartTx(uint8_t *txBuff, uint8_t txLen) {
 	// flush the TX FIFO
 	SpiritCmdStrobeFlushTxFifo();
@@ -125,12 +135,21 @@ void SPSGRF_StartTx(uint8_t *txBuff, uint8_t txLen) {
 	SpiritPktBasicSetPayloadLength(txLen);
 	SpiritCmdStrobeTx();
 }
-
+/**
+ * @brief Start data reciving
+ */
 void SPSGRF_StartRx(void)
 {
   SpiritCmdStrobeRx();
 }
 
+/**
+ * @brief Get recived data
+ *
+ * @param rxBuff Pointer to buffer where recived data wil lbe saved
+ *
+ * @retval recived data length
+ */
 uint8_t SPSGRF_GetRxData(uint8_t *rxBuff)
 {
   uint8_t len;

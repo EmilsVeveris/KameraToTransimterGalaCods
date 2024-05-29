@@ -1,5 +1,5 @@
 /*
- * functions.h
+ * Spirit1_function.h
  *
  *  Created on: May 1, 2024
  *      Author: emils
@@ -22,10 +22,10 @@
 #define BASE_FREQUENCY              433.0e6
 #define CHANNEL_SPACE               100e3
 #define CHANNEL_NUMBER              0
-#define MODULATION_SELECT           FSK
-#define DATARATE                    38400
+#define MODULATION_SELECT           MSK
+#define DATARATE                    150000
 #define FREQ_DEVIATION              20e3
-#define BANDWIDTH                   100E3
+#define BANDWIDTH                   150000E3
 
 #define POWER_INDEX                 7
 #define POWER_DBM                   11.6
@@ -35,12 +35,12 @@
 //#define CSMA_RSSI_THRESHOLD         -90   // Higher RSSI to Transmit. If it's lower, the Channel will be seen as busy.
 
 ///*  Packet configuration parameters  */
-#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_16BYTES
+#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_01BYTE
 #define SYNC_LENGTH                 PKT_SYNC_LENGTH_4BYTES
 #define SYNC_WORD                   0x88888888
 #define LENGTH_TYPE                 PKT_LENGTH_VAR
 #define LENGTH_WIDTH                7
-#define CRC_MODE                    PKT_CRC_MODE_8BITS
+#define CRC_MODE                    PKT_CRC_MODE_24BITS
 #define CONTROL_LENGTH              PKT_CONTROL_LENGTH_0BYTES
 #define EN_ADDRESS                  S_ENABLE
 #define EN_FEC                      S_DISABLE
