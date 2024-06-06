@@ -35,8 +35,9 @@ void Spirit1_init()
  		for (volatile uint8_t i = 0; i != 0xFF; i++)
  			; // delay for state transition
  		SpiritRefreshStatus(); // reads the MC_STATUS register
+ 		HAL_GPIO_WritePin(DIODE3_GPIO_Port, DIODE3_Pin, GPIO_PIN_SET);
  	} while (g_xStatus.MC_STATE != MC_STATE_READY);
-
+ 	HAL_GPIO_WritePin(DIODE3_GPIO_Port, DIODE3_Pin, GPIO_PIN_RESET);
  	SRadioInit xRadioInit;
 
  	// Initialize radio RF parameters

@@ -159,6 +159,11 @@ int main(void)
 
   	// MOUNT SD CARD
   	fresult = f_mount(&fs, "/", 1);
+	if (fresult != FR_OK) {
+		HAL_GPIO_WritePin(DIODE1_GPIO_Port, DIODE1_Pin, GPIO_PIN_SET);
+	} else {
+		HAL_GPIO_WritePin(DIODE1_GPIO_Port, DIODE1_Pin, GPIO_PIN_RESET);
+	}
 
   //Create directorys for picture storage
 	fresult = f_mkdir("RedzamaGaisma");
@@ -205,13 +210,11 @@ int main(void)
 			if (spi_recv_buf != 0x55)
 			{
 				//Camera hasnt responded, or we dont recive correct data
-				HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin);
+				HAL_GPIO_WritePin(DIODE2_GPIO_Port, DIODE2_Pin, GPIO_PIN_SET);
 				HAL_Delay(1000);
 			} else {
 				//Camera  responded correctly
-				HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin);
-				HAL_Delay(1000);
-
+				HAL_GPIO_WritePin(DIODE2_GPIO_Port, DIODE2_Pin, GPIO_PIN_RESET);
 			}
 		}
 
@@ -330,7 +333,7 @@ int main(void)
 
 		f_close(&testFile);
 
-		HAL_Delay(26000);
+		HAL_Delay(30000);
 
 	}
   /* USER CODE END 3 */

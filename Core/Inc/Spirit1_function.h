@@ -23,9 +23,9 @@
 #define CHANNEL_SPACE               100e3
 #define CHANNEL_NUMBER              0
 #define MODULATION_SELECT           MSK
-#define DATARATE                    150000
+#define DATARATE                    38400
 #define FREQ_DEVIATION              20e3
-#define BANDWIDTH                   150000E3
+#define BANDWIDTH                   500E3
 
 #define POWER_INDEX                 7
 #define POWER_DBM                   11.6
@@ -35,7 +35,7 @@
 //#define CSMA_RSSI_THRESHOLD         -90   // Higher RSSI to Transmit. If it's lower, the Channel will be seen as busy.
 
 ///*  Packet configuration parameters  */
-#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_01BYTE
+#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_03BYTES3
 #define SYNC_LENGTH                 PKT_SYNC_LENGTH_4BYTES
 #define SYNC_WORD                   0x88888888
 #define LENGTH_TYPE                 PKT_LENGTH_VAR
