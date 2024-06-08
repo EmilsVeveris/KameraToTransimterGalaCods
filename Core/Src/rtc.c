@@ -68,6 +68,10 @@ void MX_RTC_Init(void)
   }
 
   /* USER CODE BEGIN Check_RTC_BKUP */
+  if (HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1) == 0x32F2)
+  {
+	  return;
+  }
 
   /* USER CODE END Check_RTC_BKUP */
 
@@ -149,19 +153,19 @@ void set_time (void)
 {
   RTC_TimeTypeDef sTime;
   RTC_DateTypeDef sDate;
-  sTime.Hours = 0x10; // set hours
+  sTime.Hours = 0x15; // set hours
   sTime.Minutes = 0x20; // set minutes
-  sTime.Seconds = 0x30; // set seconds
+  sTime.Seconds = 0x00; // set seconds
   sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
   sTime.StoreOperation = RTC_STOREOPERATION_RESET;
   if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
   {
 	  Error_Handler();
   }
-  sDate.WeekDay = RTC_WEEKDAY_THURSDAY; //day
-  sDate.Month = RTC_MONTH_AUGUST; //month
-  sDate.Date = 0x9; // date
-  sDate.Year = 0x18; // year
+  sDate.WeekDay = RTC_WEEKDAY_SUNDAY; //day
+  sDate.Month = RTC_MONTH_JUNE; //month
+  sDate.Date = 0x8; // date
+  sDate.Year = 0x24; // year
   if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
   {
 	  Error_Handler();

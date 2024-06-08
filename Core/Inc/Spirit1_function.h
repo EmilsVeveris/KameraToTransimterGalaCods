@@ -35,7 +35,7 @@
 //#define CSMA_RSSI_THRESHOLD         -90   // Higher RSSI to Transmit. If it's lower, the Channel will be seen as busy.
 
 ///*  Packet configuration parameters  */
-#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_03BYTES3
+#define PREAMBLE_LENGTH             PKT_PREAMBLE_LENGTH_32BYTES
 #define SYNC_LENGTH                 PKT_SYNC_LENGTH_4BYTES
 #define SYNC_WORD                   0x88888888
 #define LENGTH_TYPE                 PKT_LENGTH_VAR

@@ -155,7 +155,14 @@ int main(void)
   if (MX_FATFS_Init() != APP_OK) {
       Error_Handler();
    }
-  set_time();
+
+
+
+
+  //set_time();
+
+
+
 
   	// MOUNT SD CARD
   	fresult = f_mount(&fs, "/", 1);
@@ -178,164 +185,153 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	while (1)
-	{
-		/* USER CODE END WHILE */
-
-		/* USER CODE BEGIN 3 */
-		/*
-		 * Init camera module after turn off
-		 */
-		turnCameraOn();
-		HAL_Delay(50);
-		HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-		HAL_Delay(20);
-		//Check if SPI  communication with camera module is working
-		while (spi_recv_buf != 0x55)
-		{
-			spi_buf = 0x00 | 0x80;
-			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
-			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-			spi_buf = 0x55;
-			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+	while (1) {
+			/* USER CODE END WHILE */
+			/* USER CODE BEGIN 3 */
+			/*
+			 * Init camera module after turn off
+			 */
+			turnCameraOn();
+			HAL_Delay(50);
 			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-
-			spi_buf = 0x00;
-			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
-			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-			spi_buf = 0x55;
-			HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
-			HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
-
-			if (spi_recv_buf != 0x55)
-			{
-				//Camera hasnt responded, or we dont recive correct data
-				HAL_GPIO_WritePin(DIODE2_GPIO_Port, DIODE2_Pin, GPIO_PIN_SET);
-				HAL_Delay(1000);
-			} else {
-				//Camera  responded correctly
-				HAL_GPIO_WritePin(DIODE2_GPIO_Port, DIODE2_Pin, GPIO_PIN_RESET);
+			HAL_Delay(20);
+			//Check if SPI  communication with camera module is working
+			while (spi_recv_buf != 0x55) {
+				spi_buf = 0x00 | 0x80;
+				HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+				HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+				spi_buf = 0x55;
+				HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+				HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+				spi_buf = 0x00;
+				HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_RESET);
+				HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+				spi_buf = 0x55;
+				HAL_SPI_TransmitReceive(&hspi3, &spi_buf, &spi_recv_buf, 1, 100);
+				HAL_GPIO_WritePin(CAM_CS_GPIO_Port, CAM_CS_Pin, GPIO_PIN_SET);
+				if (spi_recv_buf != 0x55) {
+					HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
+					HAL_Delay(1000);
+				} else {
+					HAL_GPIO_TogglePin(DIODE1_GPIO_Port, DIODE1_Pin); //Tooge diode when Camera  responds correctly
+					HAL_Delay(1000);
+				}
 			}
+			//Check if the camera module type is OV5642
+			writeSensorReg16_8(0xff, 0x01);
+			readSensorReg16_8(OV5642_CHIPID_HIGH, &vid);
+			readSensorReg16_8(OV5642_CHIPID_LOW, &pid);
+			//Check if camera module responds
+			if ((vid != 0x56) || (pid != 0x42)) {
+				HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin); //Toogle diode to show if  Camera hasnt responded, or we dont recive correct data
+				while (1);
+			}
+			// init cam
+			initCam();
+			// Write ARDUCHIP_TIM, VSYNC_LEVEL_MASK to spi
+			write_reg(ARDUCHIP_TIM, VSYNC_LEVEL_MASK);
+			//Change picture size
+			// Close auto exposure mode
+			//uint8_t _x3503;
+			//wrSensorReg16_8(0x5001,_x3503|0x01);
+			//Manually set the exposure value
+			writeSensorReg16_8(0x3500, 0x00);
+			writeSensorReg16_8(0x3501, 0x79);
+			writeSensorReg16_8(0x3502, 0xe0);
+			/*
+			 * Start picture taking and saving into sd card
+			 */
+			writeSensorRegs16_8(ov5642_320x240);
+			sprintf(time, "Temp/temp.JPEG");
+			//Create an file
+			fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
+
+			// set all camera registers to take a picture
+
+			takePicture();
+			//Wait for capture to be done
+			while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+			writeSensorRegs16_8(ov5642_2592x1944);
+			//Recive picture save it into sd card
+			reciveAndSavePicture(&testFile);
+			f_close(&testFile);
+			/* Get the RTC current Time */
+			HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
+			/* Get the RTC current Date */
+			HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+			//Create file for next picture
+			sprintf(time, "RedzamaGaisma/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
+					gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
+					gDate.Month, (2000 + gDate.Year));
+			//Create an file
+			fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
+
+			// set all camera registers to take a picture
+			takePicture();
+			//Wait for capture to be done
+			while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+			//Chose picture size
+			//Recive picture save it into sd card
+			reciveAndSavePicture(&testFile);
+		//	reciveAndSavePicture(&testFile);
+			f_close(&testFile);
+			turnOnFilter();
+			HAL_Delay(100);
+			/* Get the RTC current Time */
+			HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
+			/* Get the RTC current Date */
+			HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+			//Create file for next picture
+			sprintf(time, "IRGaisma/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
+					gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
+					gDate.Month, (2000 + gDate.Year));
+			//Create an file
+			fresult = f_open(&testFile, time,
+					FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
+
+
+			// set all kamera registers to take a picture
+			takePicture();
+		//	turnOffFilter();
+			//Wait for capture to be done
+			while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+			//Recive picture save it into sd card
+			writeSensorRegs16_8(ov5642_320x240);
+			reciveAndSavePicture(&testFile);
+			f_close(&testFile);
+			turnOffFilter();
+			/* Get the RTC current Time */
+			HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
+			/* Get the RTC current Date */
+			HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+			/* Display time Format: hh:mm:ss-dd-mm-yy */
+			sprintf(time, "SutitieAtteli/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
+					gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
+					gDate.Month, (2000 + gDate.Year));
+			//Create an file
+			fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
+
+			// set all camera registers to take a picture
+			takePicture();
+			//Wait for capture to be done
+			while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
+			writeSensorRegs16_8(ov5642_2592x1944);
+			//Recive picture save it into sd card, and send it to ground base station
+			reciveAndSavePicture(&testFile);
+			f_close(&testFile);
+			turnCameraOff();
+			fresult = f_open(&testFile, time, FA_READ);
+			for (;;) {
+				fresult = f_read(&testFile, buffer, sizeof(buffer), &br);
+				if (br == 0)
+					break; /* error or eof */
+				xTxDoneFlag = S_RESET;
+				SPSGRF_StartTx(buffer, sizeof(buffer));
+				while (!xTxDoneFlag);
+			}
+			f_close(&testFile);
+			HAL_Delay(10000);
 		}
-
-		//Check if the camera module type is OV5642
-		writeSensorReg16_8(0xff, 0x01);
-		readSensorReg16_8(OV5642_CHIPID_HIGH, &vid);
-		readSensorReg16_8(OV5642_CHIPID_LOW, &pid);
-		//Check if camera module responds
-		if ((vid != 0x56) || (pid != 0x42))
-		{
-			//Camera hasnt responded, or we dont recive correct data
-			HAL_GPIO_TogglePin(DIODE2_GPIO_Port, DIODE2_Pin);
-			while (1);
-		}
-
-		initCam();
-
-		// Write ARDUCHIP_TIM, VSYNC_LEVEL_MASK to spi
-		write_reg(ARDUCHIP_TIM, VSYNC_LEVEL_MASK);
-
-		//Manually set the exposure value
-		writeSensorReg16_8(0x3500, 0x00);
-		writeSensorReg16_8(0x3501, 0x79);
-		writeSensorReg16_8(0x3502, 0xe0);
-
-		/*
-		 * Start picture taking and saving into sd card
-		 */
-
-		writeSensorRegs16_8(ov5642_320x240);
-		sprintf(time, "Temp/temp.JPEG");
-
-		//Create an file
-		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
-
-		takePicture();
-		//Wait for capture to be done
-		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
-		writeSensorRegs16_8(ov5642_2592x1944);
-		//Recive picture save it into sd card
-		reciveAndSavePicture(&testFile);
-		f_close(&testFile);
-
-		getTimeAndDate(&gTime, &gDate);
-		//Create file for next picture
-		sprintf(time, "RedzamaGaisma/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
-				gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
-				gDate.Month, (2000 + gDate.Year));
-
-		//Create an file
-		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
-
-		takePicture();
-		//Wait for capture to be done
-		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
-
-		turnOnFilter();
-
-		//Recive picture save it into sd card
-		reciveAndSavePicture(&testFile);
-		f_close(&testFile);
-
-
-		getTimeAndDate(&gTime, &gDate);
-		//Create file for next picture
-		sprintf(time, "IRGaisma/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
-				gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
-				gDate.Month, (2000 + gDate.Year));
-		//Create an file
-		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
-
-		takePicture();
-
-		//Wait for capture to be done
-		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
-
-		turnOffFilter();
-		//Recive picture save it into sd card
-		reciveAndSavePicture(&testFile);
-
-		writeSensorRegs16_8(ov5642_320x240);
-
-
-		getTimeAndDate(&gTime, &gDate);
-
-		/* Display time Format: hh:mm:ss-dd-mm-yy */
-		sprintf(time, "SutitieAtteli/PIC-%02d-%02d-%02d-%02d-%02d-%2d.JPEG",
-				gTime.Hours, gTime.Minutes, gTime.Seconds, gDate.Date,
-				gDate.Month, (2000 + gDate.Year));
-		//Create an file
-		fresult = f_open(&testFile, time, FA_CREATE_ALWAYS | FA_WRITE);
-
-		takePicture();
-
-		//Wait for capture to be done
-		while (get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK) == 0);
-
-		reciveAndSavePicture(&testFile);
-		f_close(&testFile);
-
-		turnCameraOff();
-
-		fresult = f_open(&testFile, time, FA_READ);
-
-		for (;;)
-		{
-			fresult = f_read(&testFile, buffer, sizeof(buffer), &br);
-			if (br == 0)
-				break; /* error or eof */
-
-			xTxDoneFlag = S_RESET;
-			SPSGRF_StartTx(buffer, sizeof(buffer));
-
-			while (!xTxDoneFlag);
-		}
-
-		f_close(&testFile);
-
-		HAL_Delay(30000);
-
-	}
   /* USER CODE END 3 */
 }
 
